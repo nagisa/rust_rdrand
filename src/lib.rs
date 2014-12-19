@@ -93,31 +93,29 @@ impl RdRand {
         Err(Error::UnsupportedProcessor)
     }
 
-    /// Generate a u16 value.
-    pub fn next_u16(&mut self) -> u16 {
+    /// Generate a value.
+    #[inline]
+    fn gen_value<T>(&self) -> T {
         let mut var;
         unsafe {
-            asm!("rdrand $0" : "=r"(var));
+            asm!("1: rdrand $0; jnc 1b;" : "=r"(var));
         }
         var
+    }
+
+    /// Generate a u16 value.
+    pub fn next_u16(&self) -> u16 {
+        self.gen_value()
     }
 }
 
 
 impl Rng for RdRand {
     fn next_u32(&mut self) -> u32 {
-        let mut var;
-        unsafe {
-            asm!("rdrand $0" : "=r"(var));
-        }
-        var
+        self.gen_value()
     }
 
     fn next_u64(&mut self) -> u64 {
-        let mut var;
-        unsafe {
-            asm!("rdrand $0" : "=r"(var));
-        }
-        var
+        self.gen_value()
     }
 }

@@ -8,7 +8,7 @@ use std::rand::OsRng;
 
 #[bench]
 fn bench_u16(b : &mut Bencher) {
-    if let Ok(mut gen) = rdrand::RdRand::new() {
+    if let Ok(gen) = rdrand::RdRand::new() {
         b.iter(|| {
             gen.next_u16();
         });
