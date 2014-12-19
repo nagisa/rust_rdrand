@@ -3,3 +3,7 @@
 name = "rdrand"
 version = "0.0.1"
 authors = ["Simonas Kazlauskas <git@kazlauskas.me>"]
+description = "An implementation of random number generator based on rdrand instruction"
+keywords = ["rand", "rdrand", "random"]
+license = "ISC"
+repository = "https://github.com/nagisa/rust_rdrand"
