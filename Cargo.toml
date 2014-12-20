@@ -7,3 +7,4 @@ description = "An implementation of random number generator based on rdrand inst
 keywords = ["rand", "rdrand", "random"]
 license = "ISC"
 repository = "https://github.com/nagisa/rust_rdrand"
+documentation = "https://nagisa.github.io/rust_rdrand/"
