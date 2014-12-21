@@ -10,87 +10,45 @@
 // WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
 // NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
 // OF THIS SOFTWARE.
+//! An implementation of random number generators based on `rdrand` and `rdseed` instructions.
 
-//! An implementation of random number generator based on `rdrand` instruction.
-//!
-//! `rdrand` is claimed to be a cryptographically secure PRNG. It is much faster than `OsRng` (and
-//! slower than `StdRng`), but is only supported on more recent Intel processors.
-//!
-//! The generator provided by this crate is a viable replacement to any
-//! [std::rand](http://doc.rust-lang.org/std/rand/index.html) generator, however, since nobody has
-//! audited Intel hardware yet, the usual disclaimers apply.
-
-#![feature(asm)]
+#![feature(asm,globs)]
 use std::rand::Rng;
 use std::result::Result;
+mod util;
 
 
 struct PrivateInner;
-pub struct RdRand(PrivateInner);
 
 
 #[deriving(Copy)]
 #[stable]
 pub enum Error {
-    /// The processor does not support the `rdrand` instruction.
+    /// The processor does not support the instruction used in the generator.
     UnsupportedProcessor
 }
 
 
-/// Check whether RDRAND instruction is supported
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-fn is_supported() -> bool {
-    const FLAG : u32 = 1 << 30;
-    let (mut b, mut c, mut d) : (u32, u32, u32);
-    unsafe {
-        asm!("
-             mov eax, 0;
-             cpuid;
-             mov $0, ebx;
-             mov $1, ecx;
-             mov $2, edx;
-            "
-            : "=r"(b), "=r"(c), "=r"(d)
-            :
-            : "eax", "ebx", "ecx", "edx"
-            : "intel");
-    }
-    // Genuine Intel
-    if b != 0x756E6547 || d != 0x49656e69 || c != 0x6C65746E {
-        return false;
-    }
-    // 30th bit of 1st cpuid function and 0th subfunction is set
-    unsafe {
-        asm!("
-             mov eax, 1;
-             mov ecx, 0;
-             cpuid;
-             mov $0, ecx;
-            "
-            : "=r"(c)
-            :
-            : "eax", "ebx", "ecx", "edx"
-            : "intel");
-    }
-    return c & FLAG == FLAG
-}
-
+/// A cryptographically secure pseudo-random number generator.
+///
+/// This generator is a viable replacement to any [std::rand] generator, however, since nobody has
+/// audited Intel hardware yet, the usual disclaimers apply.
+///
+/// It is much faster than `OsRng` (and slower than `StdRng`), but is only supported on more recent
+/// (since Ivy Bridge) Intel processors.
+///
+/// [std::rand]: http://doc.rust-lang.org/std/rand/index.html
+pub struct RdRand(PrivateInner);
 
 impl RdRand {
     /// Build a generator object. The function will only succeed if `rdrand` instruction can be
     /// successfully used.
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub fn new() -> Result<RdRand, Error> {
-        if is_supported() {
+        if util::is_intel() && util::has_rdrand() {
             return Ok(RdRand(PrivateInner));
         } else {
             return Err(Error::UnsupportedProcessor);
         }
-    }
-
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-    pub fn new() -> Result<RdRand, Error> {
-        Err(Error::UnsupportedProcessor)
     }
 
     /// Generate a value.
@@ -109,8 +67,51 @@ impl RdRand {
     }
 }
 
-
 impl Rng for RdRand {
+    fn next_u32(&mut self) -> u32 {
+        self.gen_value()
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.gen_value()
+    }
+}
+
+
+/// A random number generator suited to seed other pseudo-random generators.
+///
+/// This instruction currently is only available in Intel Broadwell processors.
+#[experimental="The implementation has not been tested due to the lack of hardware supporting \
+                the feature"]
+pub struct RdSeed(PrivateInner);
+
+impl RdSeed {
+    #[experimental]
+    pub fn new() -> Result<RdSeed, Error> {
+        if util::is_intel() && util::has_rdseed() {
+            return Ok(RdSeed(PrivateInner));
+        } else {
+            return Err(Error::UnsupportedProcessor);
+        }
+    }
+
+    /// Generate a value.
+    #[inline]
+    fn gen_value<T>(&self) -> T {
+        let mut var;
+        unsafe {
+            asm!("1: rdseed $0; jnc 1b;" : "=r"(var));
+        }
+        var
+    }
+
+    /// Generate a u16 value.
+    pub fn next_u16(&self) -> u16 {
+        self.gen_value()
+    }
+}
+
+impl Rng for RdSeed {
     fn next_u32(&mut self) -> u32 {
         self.gen_value()
     }
