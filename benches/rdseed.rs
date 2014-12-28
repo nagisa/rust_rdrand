@@ -1,0 +1,39 @@
+extern crate rdrand;
+extern crate test;
+
+use std::rand::Rng;
+use test::Bencher;
+
+#[bench]
+fn bench_rdseed_u16(b : &mut Bencher) {
+    if let Ok(gen) = rdrand::RdSeed::new() {
+        b.bytes = 2;
+        b.iter(|| {
+            gen.next_u16()
+        });
+    } else {
+        panic!("rdseed instruction is not supported!");
+    }
+}
+
+#[bench]
+fn bench_rdseed_u32(b : &mut Bencher) {
+    if let Ok(mut gen) = rdrand::RdSeed::new() {
+        b.iter(|| {
+            gen.next_u32()
+        });
+    } else {
+        panic!("rdseed instruction is not supported!");
+    }
+}
+
+#[bench]
+fn bench_rdseed_u64(b : &mut Bencher) {
+    if let Ok(mut gen) = rdrand::RdSeed::new() {
+        b.iter(|| {
+            gen.next_u64()
+        });
+    } else {
+        panic!("rdseed instruction is not supported!");
+    }
+}
