@@ -18,9 +18,6 @@ use std::result::Result;
 mod util;
 
 
-struct PrivateInner;
-
-
 #[deriving(Copy)]
 #[stable]
 pub enum Error {
@@ -38,14 +35,14 @@ pub enum Error {
 /// (since Ivy Bridge) Intel processors.
 ///
 /// [std::rand]: http://doc.rust-lang.org/std/rand/index.html
-pub struct RdRand(PrivateInner);
+pub struct RdRand(());
 
 impl RdRand {
     /// Build a generator object. The function will only succeed if `rdrand` instruction can be
     /// successfully used.
     pub fn new() -> Result<RdRand, Error> {
         if util::is_intel() && util::has_rdrand() {
-            return Ok(RdRand(PrivateInner));
+            return Ok(RdRand(()));
         } else {
             return Err(Error::UnsupportedProcessor);
         }
@@ -83,13 +80,13 @@ impl Rng for RdRand {
 /// This instruction currently is only available in Intel Broadwell processors.
 #[experimental="The implementation has not been tested due to the lack of hardware supporting \
                 the feature"]
-pub struct RdSeed(PrivateInner);
+pub struct RdSeed(());
 
 impl RdSeed {
     #[experimental]
     pub fn new() -> Result<RdSeed, Error> {
         if util::is_intel() && util::has_rdseed() {
-            return Ok(RdSeed(PrivateInner));
+            return Ok(RdSeed(()));
         } else {
             return Err(Error::UnsupportedProcessor);
         }
