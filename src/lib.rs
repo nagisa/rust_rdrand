@@ -18,7 +18,7 @@ use std::result::Result;
 mod util;
 
 
-#[deriving(Copy)]
+#[derive(Copy)]
 #[stable]
 pub enum Error {
     /// The processor does not support the instruction used in the generator.
@@ -35,6 +35,8 @@ pub enum Error {
 /// (since Ivy Bridge) Intel processors.
 ///
 /// [std::rand]: http://doc.rust-lang.org/std/rand/index.html
+#[allow(missing_copy_implementations)]
+#[derive(Clone)]
 pub struct RdRand(());
 
 impl RdRand {
@@ -80,6 +82,8 @@ impl Rng for RdRand {
 /// This instruction currently is only available in Intel Broadwell processors.
 #[experimental="The implementation has not been tested due to the lack of hardware supporting \
                 the feature"]
+#[allow(missing_copy_implementations)]
+#[derive(Clone)]
 pub struct RdSeed(());
 
 impl RdSeed {
