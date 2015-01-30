@@ -12,7 +12,8 @@
 // OF THIS SOFTWARE.
 //! An implementation of random number generators based on `rdrand` and `rdseed` instructions.
 
-#![feature(asm,globs)]
+#![feature(asm,rand)]
+
 use std::rand::Rng;
 use std::result::Result;
 mod util;
@@ -80,14 +81,13 @@ impl Rng for RdRand {
 /// A random number generator suited to seed other pseudo-random generators.
 ///
 /// This instruction currently is only available in Intel Broadwell processors.
-#[experimental="The implementation has not been tested due to the lack of hardware supporting \
-                the feature"]
+///
+/// Note: The implementation has not been tested due to the lack of hardware supporting the feature
 #[allow(missing_copy_implementations)]
 #[derive(Clone)]
 pub struct RdSeed(());
 
 impl RdSeed {
-    #[experimental]
     pub fn new() -> Result<RdSeed, Error> {
         if util::is_intel() && util::has_rdseed() {
             return Ok(RdSeed(()));
