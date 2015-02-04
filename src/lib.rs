@@ -14,7 +14,9 @@
 
 #![feature(asm,rand)]
 
-use std::rand::Rng;
+extern crate rand;
+
+use rand::Rng;
 use std::result::Result;
 mod util;
 
