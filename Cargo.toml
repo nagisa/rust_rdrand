@@ -10,4 +10,4 @@ repository = "https://github.com/nagisa/rust_rdrand"
 documentation = "https://nagisa.github.io/rust_rdrand/"
 
 [dependencies]
-rand = "0.1.*"
+rand = "0.1"
