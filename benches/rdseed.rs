@@ -1,7 +1,8 @@
+extern crate rand;
 extern crate rdrand;
 extern crate test;
 
-use std::rand::Rng;
+use rand::Rng;
 use test::Bencher;
 
 #[bench]

@@ -1,10 +1,11 @@
+extern crate rand;
 extern crate test;
 
 use test::Bencher;
 use test::black_box;
-use std::rand::Rng;
-use std::rand::StdRng;
-use std::rand::OsRng;
+use rand::Rng;
+use rand::StdRng;
+use rand::OsRng;
 
 // OsRng is supposed to be the default for crypto uses.
 #[bench]

@@ -12,7 +12,7 @@
 // OF THIS SOFTWARE.
 //! An implementation of random number generators based on `rdrand` and `rdseed` instructions.
 
-#![feature(asm,rand)]
+#![feature(asm)]
 
 extern crate rand;
 

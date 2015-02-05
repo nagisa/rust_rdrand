@@ -1,8 +1,9 @@
+extern crate rand;
 extern crate rdrand;
 extern crate test;
 
 use test::Bencher;
-use std::rand::Rng;
+use rand::Rng;
 
 #[bench]
 fn bench_u16(b : &mut Bencher) {
