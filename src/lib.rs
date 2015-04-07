@@ -21,7 +21,7 @@ use std::result::Result;
 mod util;
 
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 #[stable]
 pub enum Error {
     /// The processor does not support the instruction used in the generator.
