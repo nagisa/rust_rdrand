@@ -22,7 +22,6 @@ mod util;
 
 
 #[derive(Copy, Clone)]
-#[stable]
 pub enum Error {
     /// The processor does not support the instruction used in the generator.
     UnsupportedProcessor
