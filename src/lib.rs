@@ -55,7 +55,7 @@ impl RdRand {
     /// Generate a value.
     #[inline]
     fn gen_value<T>(&self) -> T {
-        let mut var;
+        let var;
         unsafe {
             asm!("1: rdrand $0; jnc 1b;" : "=r"(var));
         }
@@ -100,7 +100,7 @@ impl RdSeed {
     /// Generate a value.
     #[inline]
     fn gen_value<T>(&self) -> T {
-        let mut var;
+        let var;
         unsafe {
             asm!("1: rdseed $0; jnc 1b;" : "=r"(var));
         }
@@ -121,4 +121,20 @@ impl Rng for RdSeed {
     fn next_u64(&mut self) -> u64 {
         self.gen_value()
     }
+}
+
+#[test]
+fn rdrand_works() {
+    let _ = RdRand::new().map(|mut r| {
+        r.next_u32();
+        r.next_u64();
+    });
+}
+
+#[test]
+fn rdseed_works() {
+    let _ = RdSeed::new().map(|mut r| {
+        r.next_u32();
+        r.next_u64();
+    });
 }

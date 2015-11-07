@@ -20,7 +20,7 @@ pub use self::imp::*;
 mod imp {
     #[inline]
     fn cpuid(ain : u32, cin : u32) -> (u32, u32, u32, u32) {
-        let (mut a, mut b, mut c, mut d);
+        let (a, b, c, d);
         unsafe {
             asm!("cpuid"
                 :"={eax}"(a), "={ebx}"(b), "={ecx}"(c), "={edx}"(d)
