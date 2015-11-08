@@ -1,3 +1,4 @@
+#![feature(test)]
 extern crate rand;
 extern crate rdrand;
 extern crate test;
