@@ -21,10 +21,32 @@ use std::result::Result;
 mod util;
 
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Error {
     /// The processor does not support the instruction used in the generator.
     UnsupportedProcessor
+}
+
+impl ::std::error::Error for Error {
+    fn description(&self) -> &str {
+        match self {
+            &Error::UnsupportedProcessor => "processor does not support the instruction",
+        }
+    }
+}
+
+impl ::std::fmt::Display for Error {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match self {
+            &Error::UnsupportedProcessor => write!(f, "processor does not support the instruction")
+        }
+    }
+}
+
+impl From<Error> for ::std::io::Error {
+    fn from(e: Error) -> ::std::io::Error {
+        ::std::io::Error::new(::std::io::ErrorKind::Other, format!("{}", e))
+    }
 }
 
 
