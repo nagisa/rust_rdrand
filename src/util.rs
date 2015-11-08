@@ -19,12 +19,11 @@ pub use self::imp::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod imp {
     #[inline]
-    fn cpuid(ain : u32, cin : u32) -> (u32, u32, u32, u32) {
-        let (a, b, c, d);
+    fn cpuid(mut a: u32, mut c: u32) -> (u32, u32, u32, u32) {
+        let (b, d);
         unsafe {
             asm!("cpuid"
-                :"={eax}"(a), "={ebx}"(b), "={ecx}"(c), "={edx}"(d)
-                :"{eax}"(ain), "{ecx}"(cin)
+                :"+{eax}"(a), "={ebx}"(b), "+{ecx}"(c), "={edx}"(d)
                 );
         }
         (a, b, c, d)
