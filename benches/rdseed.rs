@@ -13,8 +13,6 @@ fn bench_rdseed_u16(b : &mut Bencher) {
         b.iter(|| {
             gen.next_u16()
         });
-    } else {
-        panic!("rdseed instruction is not supported!");
     }
 }
 
@@ -24,8 +22,6 @@ fn bench_rdseed_u32(b : &mut Bencher) {
         b.iter(|| {
             gen.next_u32()
         });
-    } else {
-        panic!("rdseed instruction is not supported!");
     }
 }
 
@@ -35,7 +31,5 @@ fn bench_rdseed_u64(b : &mut Bencher) {
         b.iter(|| {
             gen.next_u64()
         });
-    } else {
-        panic!("rdseed instruction is not supported!");
     }
 }

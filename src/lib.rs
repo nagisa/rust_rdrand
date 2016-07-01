@@ -11,14 +11,10 @@
 // NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
 // OF THIS SOFTWARE.
 //! An implementation of random number generators based on `rdrand` and `rdseed` instructions.
-
-#![feature(asm)]
-
 extern crate rand;
 
 use rand::Rng;
 use std::result::Result;
-mod util;
 
 
 #[derive(Copy, Clone, Debug)]
@@ -49,7 +45,6 @@ impl From<Error> for ::std::io::Error {
     }
 }
 
-
 /// A cryptographically secure pseudo-random number generator.
 ///
 /// This generator is a viable replacement to any [std::rand] generator, however, since nobody has
@@ -66,37 +61,39 @@ pub struct RdRand(());
 impl RdRand {
     /// Build a generator object. The function will only succeed if `rdrand` instruction can be
     /// successfully used.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub fn new() -> Result<RdRand, Error> {
-        if util::is_intel() && util::has_rdrand() {
+        if unsafe { librdrand_rust_has_rdrand() } {
             return Ok(RdRand(()));
         } else {
             return Err(Error::UnsupportedProcessor);
         }
     }
 
-    /// Generate a value.
-    #[inline]
-    fn gen_value<T>(&self) -> T {
-        let var;
-        unsafe {
-            asm!("1: rdrand $0; jnc 1b;" : "=r"(var));
-        }
-        var
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    pub fn new() -> Result<RdSeed, Error> {
+        Err(Error::UnsupportedProcessor)
     }
 
     /// Generate a u16 value.
     pub fn next_u16(&self) -> u16 {
-        self.gen_value()
+        unsafe {
+            librdrand_rust_rand_16()
+        }
     }
 }
 
 impl Rng for RdRand {
     fn next_u32(&mut self) -> u32 {
-        self.gen_value()
+        unsafe {
+            librdrand_rust_rand_32()
+        }
     }
 
     fn next_u64(&mut self) -> u64 {
-        self.gen_value()
+        unsafe {
+            librdrand_rust_rand_64()
+        }
     }
 }
 
@@ -111,38 +108,52 @@ impl Rng for RdRand {
 pub struct RdSeed(());
 
 impl RdSeed {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub fn new() -> Result<RdSeed, Error> {
-        if util::is_intel() && util::has_rdseed() {
-            return Ok(RdSeed(()));
+        if unsafe { librdrand_rust_has_rdseed() } {
+            Ok(RdSeed(()))
         } else {
-            return Err(Error::UnsupportedProcessor);
+            Err(Error::UnsupportedProcessor)
         }
     }
 
-    /// Generate a value.
-    #[inline]
-    fn gen_value<T>(&self) -> T {
-        let var;
-        unsafe {
-            asm!("1: rdseed $0; jnc 1b;" : "=r"(var));
-        }
-        var
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    pub fn new() -> Result<RdSeed, Error> {
+        Err(Error::UnsupportedProcessor)
     }
 
     /// Generate a u16 value.
     pub fn next_u16(&self) -> u16 {
-        self.gen_value()
+        unsafe {
+            librdrand_rust_seed_16()
+        }
     }
 }
 
 impl Rng for RdSeed {
     fn next_u32(&mut self) -> u32 {
-        self.gen_value()
+        unsafe {
+            librdrand_rust_seed_32()
+        }
     }
 
     fn next_u64(&mut self) -> u64 {
-        self.gen_value()
+        unsafe {
+            librdrand_rust_seed_64()
+        }
     }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+extern {
+    fn librdrand_rust_rand_64() -> u64;
+    fn librdrand_rust_rand_32() -> u32;
+    fn librdrand_rust_rand_16() -> u16;
+    fn librdrand_rust_seed_64() -> u64;
+    fn librdrand_rust_seed_32() -> u32;
+    fn librdrand_rust_seed_16() -> u16;
+    fn librdrand_rust_has_rdrand() -> bool;
+    fn librdrand_rust_has_rdseed() -> bool;
 }
 
 #[test]

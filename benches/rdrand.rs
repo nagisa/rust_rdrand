@@ -13,8 +13,6 @@ fn bench_u16(b : &mut Bencher) {
         b.iter(|| {
             gen.next_u16()
         });
-    } else {
-        panic!("rdrand instruction is not supported!");
     }
 }
 
@@ -25,8 +23,6 @@ fn bench_u32(b : &mut Bencher) {
         b.iter(|| {
             gen.next_u32()
         });
-    } else {
-        panic!("rdrand instruction is not supported!");
     }
 }
 
@@ -37,9 +33,5 @@ fn bench_u64(b : &mut Bencher) {
         b.iter(|| {
             gen.next_u64()
         });
-    } else {
-        panic!("rdrand instruction is not supported!");
     }
 }
-
-

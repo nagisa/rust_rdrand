@@ -8,6 +8,7 @@ keywords = ["rand", "rdrand", "rdseed", "random"]
 license = "ISC"
 repository = "https://github.com/nagisa/rust_rdrand/"
 documentation = "https://nagisa.github.io/rust_rdrand/"
+build = "build.rs"
 
 [dependencies]
 rand = "0.3"
