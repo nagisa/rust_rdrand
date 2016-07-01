@@ -79,7 +79,7 @@ done:
 
 define zeroext i1 @librdrand_rust_has_rdrand() unnamed_addr #0 {
 entry-block:
-  %0 = tail call { i32, i32, i32, i32 } asm "cpuid", "={eax},={ebx},={ecx},={edx},0,2,~{dirflag},~{fpsr},~{flags}"(i32 1, i32 0)
+  %0 = tail call { i32, i32, i32, i32 } asm "cpuid", "={eax},={ebx},={ecx},={edx},0,2"(i32 1, i32 0)
   %1 = extractvalue { i32, i32, i32, i32 } %0, 2
   %2 = and i32 %1, 1073741824
   %3 = icmp ne i32 %2, 0
@@ -88,7 +88,7 @@ entry-block:
 
 define zeroext i1 @librdrand_rust_has_rdseed() unnamed_addr #0 {
 entry-block:
-  %0 = tail call { i32, i32, i32, i32 } asm "cpuid", "={eax},={ebx},={ecx},={edx},0,2,~{dirflag},~{fpsr},~{flags}"(i32 7, i32 0)
+  %0 = tail call { i32, i32, i32, i32 } asm "cpuid", "={eax},={ebx},={ecx},={edx},0,2"(i32 7, i32 0)
   %1 = extractvalue { i32, i32, i32, i32 } %0, 1
   %2 = and i32 %1, 262144
   %3 = icmp ne i32 %2, 0
