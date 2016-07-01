@@ -70,7 +70,7 @@ impl RdRand {
         }
     }
 
-    /// Generate a u16 value.
+    /// Generate a `u16` value.
     pub fn next_u16(&self) -> u16 {
         unsafe {
             librdrand_rust_rand_16()
@@ -111,7 +111,7 @@ impl RdSeed {
         }
     }
 
-    /// Generate a u16 value.
+    /// Generate a `u16` value.
     pub fn next_u16(&self) -> u16 {
         unsafe {
             librdrand_rust_seed_16()
@@ -133,7 +133,7 @@ impl Rng for RdSeed {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(has_impls)]
 extern {
     fn librdrand_rust_rand_64() -> u64;
     fn librdrand_rust_rand_32() -> u32;
@@ -152,17 +152,17 @@ macro_rules! unreachable {
     }
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(has_impls))]
 unreachable!(librdrand_rust_rand_16 -> u16,
              librdrand_rust_rand_32 -> u32,
              librdrand_rust_rand_64 -> u64,
              librdrand_rust_seed_16 -> u16,
              librdrand_rust_seed_32 -> u32,
              librdrand_rust_seed_64 -> u64);
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(has_impls))]
 #[inline(always)]
 fn librdrand_rust_has_rdrand() -> bool { false }
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(has_impls))]
 #[inline(always)]
 fn librdrand_rust_has_rdseed() -> bool { false }
 
