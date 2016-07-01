@@ -4,10 +4,15 @@ use std::path::{PathBuf, Path};
 use llvm_build_utils::*;
 
 fn main() {
+    let known_triple_starts = ["x86_64"];
+    if let Ok(var) = ::std::env::var("TARGET") {
+        if !known_triple_starts.iter().any(|x| var.starts_with(x)){
+            return;
+        }
+    }
     let outpath: PathBuf = ::std::env::var_os("OUT_DIR").expect("no $OUT_DIR").into();
     build_archive(&outpath.join("librdrand_impls.a") as &AsRef<Path>, &[
     (&"src/impls.ll" as &AsRef<Path>, BuildOptions {
-        cpu: "x86-64".into(),
         attr: "+rdrnd,+rdseed".into(),
         ..BuildOptions::default()
     })]).expect("error happened");

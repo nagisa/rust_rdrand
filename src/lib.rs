@@ -12,6 +12,7 @@
 // OF THIS SOFTWARE.
 //! An implementation of random number generators based on `rdrand` and `rdseed` instructions.
 extern crate rand;
+extern crate unreachable;
 
 use rand::Rng;
 use std::result::Result;
@@ -61,18 +62,12 @@ pub struct RdRand(());
 impl RdRand {
     /// Build a generator object. The function will only succeed if `rdrand` instruction can be
     /// successfully used.
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub fn new() -> Result<RdRand, Error> {
         if unsafe { librdrand_rust_has_rdrand() } {
             return Ok(RdRand(()));
         } else {
             return Err(Error::UnsupportedProcessor);
         }
-    }
-
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-    pub fn new() -> Result<RdSeed, Error> {
-        Err(Error::UnsupportedProcessor)
     }
 
     /// Generate a u16 value.
@@ -108,18 +103,12 @@ impl Rng for RdRand {
 pub struct RdSeed(());
 
 impl RdSeed {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub fn new() -> Result<RdSeed, Error> {
         if unsafe { librdrand_rust_has_rdseed() } {
             Ok(RdSeed(()))
         } else {
             Err(Error::UnsupportedProcessor)
         }
-    }
-
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-    pub fn new() -> Result<RdSeed, Error> {
-        Err(Error::UnsupportedProcessor)
     }
 
     /// Generate a u16 value.
@@ -144,7 +133,7 @@ impl Rng for RdSeed {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 extern {
     fn librdrand_rust_rand_64() -> u64;
     fn librdrand_rust_rand_32() -> u32;
@@ -155,6 +144,27 @@ extern {
     fn librdrand_rust_has_rdrand() -> bool;
     fn librdrand_rust_has_rdseed() -> bool;
 }
+
+macro_rules! unreachable {
+    ($($name: ident -> $ty: ident)+) => {
+        #[inline(always)]
+        fn $name() -> $ty { unreachable::unreachable() }
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+unreachable!(librdrand_rust_rand_16 -> u16,
+             librdrand_rust_rand_32 -> u32,
+             librdrand_rust_rand_64 -> u64,
+             librdrand_rust_seed_16 -> u16,
+             librdrand_rust_seed_32 -> u32,
+             librdrand_rust_seed_64 -> u64);
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+fn librdrand_rust_has_rdrand() -> bool { false }
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+fn librdrand_rust_has_rdseed() -> bool { false }
 
 #[test]
 fn rdrand_works() {
