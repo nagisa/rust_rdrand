@@ -1,18 +1,13 @@
 [package]
 
 name = "rdrand"
-version = "0.1.6"
+version = "0.1.5"
 authors = ["Simonas Kazlauskas <git@kazlauskas.me>"]
 description = "An implementation of random number generator based on rdrand and rdseed instructions"
 keywords = ["rand", "rdrand", "rdseed", "random"]
 license = "ISC"
 repository = "https://github.com/nagisa/rust_rdrand/"
-documentation = "https://nagisa.github.io/rust_rdrand/"
-build = "build.rs"
+documentation = "https://docs.rs/rdrand/0.1.5/"
 
 [dependencies]
 rand = "0.3"
-unreachable = "0.1"
-
-[build-dependencies]
-llvm_build_utils = "0.2"

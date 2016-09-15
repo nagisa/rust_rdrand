@@ -16,8 +16,6 @@ fn bench_osrng_u64(b : &mut Bencher) {
         b.iter(|| {
             black_box(gen.next_u64());
         });
-    } else {
-        panic!("couldn’t create OsRng");
     }
 }
 
@@ -29,7 +27,5 @@ fn bench_stdrng_u64(b : &mut Bencher) {
         b.iter(|| {
             gen.next_u64();
         });
-    } else {
-        panic!("couldn’t create StdRng");
     }
 }
