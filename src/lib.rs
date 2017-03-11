@@ -12,7 +12,7 @@
 // OF THIS SOFTWARE.
 //! An implementation of random number generators based on `rdrand` and `rdseed` instructions.
 
-#![feature(asm)]
+#![feature(target_feature, asm, platform_intrinsics)]
 
 extern crate rand;
 
@@ -20,6 +20,25 @@ use rand::Rng;
 use std::result::Result;
 mod util;
 
+extern "platform-intrinsic" {
+    fn x86_rdrand16_step() -> (u16, i32);
+    fn x86_rdrand32_step() -> (u32, i32);
+    fn x86_rdrand64_step() -> (u64, i32);
+    fn x86_rdseed16_step() -> (u16, i32);
+    fn x86_rdseed32_step() -> (u32, i32);
+    fn x86_rdseed64_step() -> (u64, i32);
+}
+
+macro_rules! loop_rand {
+    ($f:ident) => {
+        loop {
+            unsafe {
+                let (val, succ) = ($f)();
+                if succ != 0 { return val; }
+            }
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
 pub enum Error {
@@ -74,32 +93,24 @@ impl RdRand {
         }
     }
 
-    /// Generate a value.
-    #[inline]
-    fn gen_value<T>(&self) -> T {
-        let var;
-        unsafe {
-            asm!("1: rdrand $0; jnc 1b;" : "=r"(var));
-        }
-        var
-    }
-
     /// Generate a u16 value.
+    #[target_feature="+rdrnd"]
     pub fn next_u16(&self) -> u16 {
-        self.gen_value()
+        loop_rand!(x86_rdrand16_step);
     }
 }
 
 impl Rng for RdRand {
+    #[target_feature="+rdrnd"]
     fn next_u32(&mut self) -> u32 {
-        self.gen_value()
+        loop_rand!(x86_rdrand32_step);
     }
 
+    #[target_feature="+rdrnd"]
     fn next_u64(&mut self) -> u64 {
-        self.gen_value()
+        loop_rand!(x86_rdrand64_step);
     }
 }
-
 
 /// A random number generator suited to seed other pseudo-random generators.
 ///
@@ -119,29 +130,22 @@ impl RdSeed {
         }
     }
 
-    /// Generate a value.
-    #[inline]
-    fn gen_value<T>(&self) -> T {
-        let var;
-        unsafe {
-            asm!("1: rdseed $0; jnc 1b;" : "=r"(var));
-        }
-        var
-    }
-
     /// Generate a u16 value.
+    #[target_feature="+rdseed"]
     pub fn next_u16(&self) -> u16 {
-        self.gen_value()
+        loop_rand!(x86_rdseed16_step);
     }
 }
 
 impl Rng for RdSeed {
+    #[target_feature="+rdseed"]
     fn next_u32(&mut self) -> u32 {
-        self.gen_value()
+        loop_rand!(x86_rdseed32_step);
     }
 
+    #[target_feature="+rdseed"]
     fn next_u64(&mut self) -> u64 {
-        self.gen_value()
+        loop_rand!(x86_rdseed64_step);
     }
 }
 
