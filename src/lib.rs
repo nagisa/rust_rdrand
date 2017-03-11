@@ -78,8 +78,7 @@ impl From<Error> for ::std::io::Error {
 /// (since Ivy Bridge) Intel processors.
 ///
 /// [std::rand]: http://doc.rust-lang.org/std/rand/index.html
-#[allow(missing_copy_implementations)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct RdRand(());
 
 impl RdRand {
@@ -117,8 +116,7 @@ impl Rng for RdRand {
 /// This instruction currently is only available in Intel Broadwell processors.
 ///
 /// Note: The implementation has not been tested due to the lack of hardware supporting the feature
-#[allow(missing_copy_implementations)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct RdSeed(());
 
 impl RdSeed {
