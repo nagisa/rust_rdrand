@@ -30,13 +30,6 @@ mod imp {
     }
 
     #[inline]
-    pub fn is_intel() -> bool {
-        let (_, b, c, d) = cpuid(0, 0);
-        // GenuineIntel
-        return b == 0x756E6547 && d == 0x49656e69 && c == 0x6C65746E;
-    }
-
-    #[inline]
     pub fn has_rdrand() -> bool {
         const FLAG : u32 = 1 << 30;
         let (_, _, c, _) = cpuid(1, 0);
@@ -53,11 +46,6 @@ mod imp {
 
 #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
 mod imp {
-    #[inline]
-    pub fn is_intel() -> bool {
-        false
-    }
-
     #[inline]
     pub fn has_rdrand() -> bool {
         false

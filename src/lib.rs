@@ -85,7 +85,7 @@ impl RdRand {
     /// Build a generator object. The function will only succeed if `rdrand` instruction can be
     /// successfully used.
     pub fn new() -> Result<RdRand, Error> {
-        if util::is_intel() && util::has_rdrand() {
+        if util::has_rdrand() {
             return Ok(RdRand(()));
         } else {
             return Err(Error::UnsupportedProcessor);
@@ -121,7 +121,7 @@ pub struct RdSeed(());
 
 impl RdSeed {
     pub fn new() -> Result<RdSeed, Error> {
-        if util::is_intel() && util::has_rdseed() {
+        if util::has_rdseed() {
             return Ok(RdSeed(()));
         } else {
             return Err(Error::UnsupportedProcessor);
