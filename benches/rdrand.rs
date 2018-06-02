@@ -1,17 +1,17 @@
 #![feature(test)]
-extern crate rand;
+extern crate rand_core;
 extern crate rdrand;
 extern crate test;
 
+use rand_core::RngCore;
 use test::Bencher;
-use rand::Rng;
 
 #[bench]
 fn bench_u16(b : &mut Bencher) {
     if let Ok(gen) = rdrand::RdRand::new() {
         b.bytes = 2;
         b.iter(|| {
-            gen.next_u16()
+            gen.try_next_u16().unwrap()
         });
     }
 }
@@ -36,4 +36,14 @@ fn bench_u64(b : &mut Bencher) {
     }
 }
 
-
+#[bench]
+fn bench_fill(b : &mut Bencher) {
+    if let Ok(mut gen) = rdrand::RdRand::new() {
+        let mut buffer = [0; 128];
+        b.bytes = 128;
+        b.iter(|| {
+            gen.fill_bytes(&mut buffer);
+            buffer
+        });
+    }
+}

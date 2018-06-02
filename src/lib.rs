@@ -12,140 +12,243 @@
 // OF THIS SOFTWARE.
 //! An implementation of random number generators based on `rdrand` and `rdseed` instructions.
 
-#![feature(target_feature, asm, platform_intrinsics)]
+#![no_std]
+#![feature(slice_align_to)]
 
-extern crate rand;
+extern crate rand_core;
 
-use rand::Rng;
-use std::result::Result;
-mod util;
+use rand_core::{RngCore, CryptoRng, Error, ErrorKind};
+use core::slice;
 
-extern "platform-intrinsic" {
-    fn x86_rdrand16_step() -> (u16, i32);
-    fn x86_rdrand32_step() -> (u32, i32);
-    fn x86_rdrand64_step() -> (u64, i32);
-    fn x86_rdseed16_step() -> (u16, i32);
-    fn x86_rdseed32_step() -> (u32, i32);
-    fn x86_rdseed64_step() -> (u64, i32);
+const RETRY_LIMIT: u8 = 127;
+
+#[cold]
+#[inline(never)]
+pub fn busy_loop_fail() -> ! {
+    panic!("hardware generator failure");
+}
+
+/// A cryptographically secure statistically uniform, non-periodic and non-deterministic random bit
+/// generator.
+///
+/// Note that this generator may be implemented using a deterministic algorithm that is reseeded
+/// routinely from a non-deterministic entropy source to achieve the desirable properties.
+///
+/// This generator is a viable replacement to any generator, however, since nobody has audited
+/// Intel or AMD hardware yet, the usual disclaimers as to their suitability apply.
+///
+/// It is much faster than `OsRng`, but is only supported on more recent Intel
+/// (Ivy Bridge and later) and AMD (Ryzen and later) processors.
+#[derive(Clone, Copy)]
+pub struct RdRand(());
+
+/// A cryptographically secure non-deterministic random bit generator.
+///
+/// This generator produces high-entropy output and is suited to seed other pseudo-random
+/// generators.
+///
+/// This instruction currently is only available in Intel Broadwell (and later) and AMD Ryzen
+/// processors.
+///
+/// This generator is not intended for general random number generation purposes and should be used
+/// to seed other generators implementing [SeedableRng].
+#[derive(Clone, Copy)]
+pub struct RdSeed(());
+
+impl CryptoRng for RdRand {}
+impl CryptoRng for RdSeed {}
+
+mod arch {
+    #[cfg(target_arch = "x86_64")]
+    pub use core::arch::x86_64::*;
+    #[cfg(target_arch = "x86")]
+    pub use core::arch::x86::*;
+
+    #[cfg(target_arch = "x86")]
+    fn _rdrand64_step(dest: &mut u64) -> i32 {
+        let mut ret1: u32 = ::core::mem::uninitialized();
+        let mut ret2: u32 = ::core::mem::uninitialized();
+        if _rdrand32_step(&mut ret1) != 0 && _rdrand32_step(&mut ret2) != 0 {
+            *out = (ret1 as u64) << 32 | (ret2 as u64);
+            1
+        } else {
+            0
+        }
+    }
+
+    #[cfg(target_arch = "x86")]
+    fn _rdseed64_step(dest: &mut u64) -> i32 {
+        let mut ret1: u32 = ::core::mem::uninitialized();
+        let mut ret2: u32 = ::core::mem::uninitialized();
+        if _rdseed32_step(&mut ret1) != 0 && _rdseed32_step(&mut ret2) != 0 {
+            *out = (ret1 as u64) << 32 | (ret2 as u64);
+            1
+        } else {
+            0
+        }
+    }
+}
+
+macro_rules! check_cpuid {
+    ("rdrand") => { {
+        const FLAG : u32 = 1 << 30;
+        ::arch::__cpuid(1).ecx & FLAG == FLAG
+    } };
+    ("rdseed") => { {
+        const FLAG : u32 = 1 << 18;
+        ::arch::__cpuid(7).ebx & FLAG == FLAG
+    } };
 }
 
 macro_rules! loop_rand {
-    ($f:ident) => {
-        loop {
-            unsafe {
-                let (val, succ) = ($f)();
-                if succ != 0 { return val; }
+    ($feat: tt, $el: ty, $step: path) => { {
+        #[target_feature(enable = $feat)]
+        unsafe fn imp() -> Option<$el> {
+            let mut ret: $el = ::core::mem::uninitialized();
+            for _ in 0..RETRY_LIMIT {
+                if $step(&mut ret) != 0 {
+                    return Some(ret);
+                }
+            }
+            return None;
+        }
+        unsafe { imp() }
+    } }
+}
+
+macro_rules! impl_rand {
+    ($gen:ident, $feat:tt, $step16: path, $step32:path, $step64:path,
+     maxstep = $maxstep:path, maxty = $maxty: ty, next = $trynext:ident) => {
+        impl $gen {
+            pub fn new() -> Result<Self, Error> {
+                unsafe {
+                    if cfg!(target_feature=$feat) || check_cpuid!($feat) {
+                        Ok($gen(()))
+                    } else {
+                        Err(Error::new(rand_core::ErrorKind::Unavailable,
+                                       "the instruction is not supported"))
+                    }
+                }
+            }
+
+            #[inline(always)]
+            pub fn try_next_u16(&self) -> Option<u16> {
+                loop_rand!($feat, u16, $step16)
+            }
+
+            #[inline(always)]
+            pub fn try_next_u32(&self) -> Option<u32> {
+                loop_rand!($feat, u32, $step32)
+            }
+
+            #[inline(always)]
+            pub fn try_next_u64(&self) -> Option<u64> {
+                loop_rand!($feat, u64, $step64)
+            }
+        }
+
+        impl RngCore for $gen {
+            #[inline(always)]
+            fn next_u32(&mut self) -> u32 {
+                if let Some(result) = self.try_next_u32() {
+                    result
+                } else {
+                    busy_loop_fail()
+                }
+            }
+
+            #[inline(always)]
+            fn next_u64(&mut self) -> u64 {
+                if let Some(result) = self.try_next_u64() {
+                    result
+                } else {
+                    busy_loop_fail()
+                }
+            }
+
+            #[inline(always)]
+            fn fill_bytes(&mut self, dest: &mut [u8]) {
+                if let Err(_) = self.try_fill_bytes(dest) {
+                    busy_loop_fail()
+                }
+            }
+
+            fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
+                #[target_feature(enable = $feat)]
+                unsafe fn imp_fast(dest: &mut [$maxty])
+                -> Result<(), Error>
+                {
+                    'outer: for el in dest {
+                        for _ in 0..RETRY_LIMIT {
+                            if $maxstep(el) != 0 {
+                                continue 'outer;
+                            }
+                        }
+                        return Err(Error::new(ErrorKind::Unexpected, "hardware generator failure"));
+                    }
+                    Ok(())
+                }
+
+                unsafe fn imp_slow(this: &mut $gen, mut dest: &mut [u8],
+                                   word: &mut $maxty, buffer: &mut &[u8])
+                -> Result<(), Error> {
+                    while !dest.is_empty() {
+                        if buffer.is_empty() {
+                            if let Some(w) = $gen::$trynext(&*this) {
+                                *word = w;
+                                *buffer = slice::from_raw_parts(&word as *const _ as *const u8,
+                                                                ::core::mem::size_of::<$maxty>());
+                            } else {
+                                return Err(Error::new(ErrorKind::Unexpected,
+                                                      "hardware generator failure"));
+                            }
+                        }
+                        let len = dest.len().min(buffer.len());
+                        let (copy_src, leftover) = buffer.split_at(len);
+                        let (copy_dest, dest_leftover) = { dest }.split_at_mut(len);
+                        *buffer = leftover;
+                        dest = dest_leftover;
+                        copy_dest.copy_from_slice(copy_src);
+                    }
+                    Ok(())
+                }
+
+                unsafe {
+                    let destlen = dest.len();
+                    if destlen > ::core::mem::size_of::<$maxty>() {
+                            let (left, mid, right) = dest.align_to_mut();
+                            let mut word = 0;
+                            let mut buffer: &[u8] = &[];
+                            imp_fast(mid)?;
+                            imp_slow(self, left, &mut word, &mut buffer)?;
+                            imp_slow(self, right, &mut word, &mut buffer)
+                    } else {
+                        let mut word = 0;
+                        let mut buffer: &[u8] = &[];
+                        imp_slow(self, dest, &mut word, &mut buffer)
+                    }
+                }
             }
         }
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum Error {
-    /// The processor does not support the instruction used in the generator.
-    UnsupportedProcessor
-}
-
-impl ::std::error::Error for Error {
-    fn description(&self) -> &str {
-        match self {
-            &Error::UnsupportedProcessor => "processor does not support the instruction",
-        }
-    }
-}
-
-impl ::std::fmt::Display for Error {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match self {
-            &Error::UnsupportedProcessor => write!(f, "processor does not support the instruction")
-        }
-    }
-}
-
-impl From<Error> for ::std::io::Error {
-    fn from(e: Error) -> ::std::io::Error {
-        ::std::io::Error::new(::std::io::ErrorKind::Other, format!("{}", e))
-    }
-}
-
-
-/// A cryptographically secure pseudo-random number generator.
-///
-/// This generator is a viable replacement to any [std::rand] generator, however, since nobody has
-/// audited Intel hardware yet, the usual disclaimers apply.
-///
-/// It is much faster than `OsRng` (and slower than `StdRng`), but is only supported on more recent
-/// (since Ivy Bridge) Intel processors.
-///
-/// [std::rand]: http://doc.rust-lang.org/std/rand/index.html
-#[derive(Clone, Copy)]
-pub struct RdRand(());
-
-impl RdRand {
-    /// Build a generator object. The function will only succeed if `rdrand` instruction can be
-    /// successfully used.
-    pub fn new() -> Result<RdRand, Error> {
-        if util::has_rdrand() {
-            return Ok(RdRand(()));
-        } else {
-            return Err(Error::UnsupportedProcessor);
-        }
-    }
-
-    /// Generate a u16 value.
-    #[target_feature="+rdrnd"]
-    pub fn next_u16(&self) -> u16 {
-        loop_rand!(x86_rdrand16_step);
-    }
-}
-
-impl Rng for RdRand {
-    #[target_feature="+rdrnd"]
-    fn next_u32(&mut self) -> u32 {
-        loop_rand!(x86_rdrand32_step);
-    }
-
-    #[target_feature="+rdrnd"]
-    fn next_u64(&mut self) -> u64 {
-        loop_rand!(x86_rdrand64_step);
-    }
-}
-
-/// A random number generator suited to seed other pseudo-random generators.
-///
-/// This instruction currently is only available in Intel Broadwell processors.
-///
-/// Note: The implementation has not been tested due to the lack of hardware supporting the feature
-#[derive(Clone, Copy)]
-pub struct RdSeed(());
-
-impl RdSeed {
-    pub fn new() -> Result<RdSeed, Error> {
-        if util::has_rdseed() {
-            return Ok(RdSeed(()));
-        } else {
-            return Err(Error::UnsupportedProcessor);
-        }
-    }
-
-    /// Generate a u16 value.
-    #[target_feature="+rdseed"]
-    pub fn next_u16(&self) -> u16 {
-        loop_rand!(x86_rdseed16_step);
-    }
-}
-
-impl Rng for RdSeed {
-    #[target_feature="+rdseed"]
-    fn next_u32(&mut self) -> u32 {
-        loop_rand!(x86_rdseed32_step);
-    }
-
-    #[target_feature="+rdseed"]
-    fn next_u64(&mut self) -> u64 {
-        loop_rand!(x86_rdseed64_step);
-    }
-}
+#[cfg(target_arch = "x86_64")]
+impl_rand!(RdRand, "rdrand",
+           ::arch::_rdrand16_step, ::arch::_rdrand32_step, ::arch::_rdrand64_step,
+           maxstep = ::arch::_rdrand64_step, maxty = u64, next = try_next_u64);
+#[cfg(target_arch = "x86_64")]
+impl_rand!(RdSeed, "rdseed",
+           ::arch::_rdseed16_step, ::arch::_rdseed32_step, ::arch::_rdseed64_step,
+           maxstep = ::arch::_rdseed64_step, maxty = u64, next = try_next_u64);
+#[cfg(target_arch = "x86")]
+impl_rand!(RdRand, "rdrand",
+           ::arch::_rdrand16_step, ::arch::_rdrand32_step, ::arch::_rdrand64_step,
+           maxstep = ::arch::_rdrand32_step, maxty = u32, next = try_next_u32);
+#[cfg(target_arch = "x86")]
+impl_rand!(RdSeed, "rdseed",
+           ::arch::_rdseed16_step, ::arch::_rdseed32_step, ::arch::_rdseed64_step,
+           maxstep = ::arch::_rdseed32_step, maxty = u32, next = try_next_u32);
 
 #[test]
 fn rdrand_works() {
