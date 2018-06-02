@@ -65,11 +65,11 @@ mod arch {
     pub use core::arch::x86::*;
 
     #[cfg(target_arch = "x86")]
-    fn _rdrand64_step(dest: &mut u64) -> i32 {
+    pub(crate) unsafe fn _rdrand64_step(dest: &mut u64) -> i32 {
         let mut ret1: u32 = ::core::mem::uninitialized();
         let mut ret2: u32 = ::core::mem::uninitialized();
         if _rdrand32_step(&mut ret1) != 0 && _rdrand32_step(&mut ret2) != 0 {
-            *out = (ret1 as u64) << 32 | (ret2 as u64);
+            *dest = (ret1 as u64) << 32 | (ret2 as u64);
             1
         } else {
             0
@@ -77,11 +77,11 @@ mod arch {
     }
 
     #[cfg(target_arch = "x86")]
-    fn _rdseed64_step(dest: &mut u64) -> i32 {
+    pub(crate) unsafe fn _rdseed64_step(dest: &mut u64) -> i32 {
         let mut ret1: u32 = ::core::mem::uninitialized();
         let mut ret2: u32 = ::core::mem::uninitialized();
         if _rdseed32_step(&mut ret1) != 0 && _rdseed32_step(&mut ret2) != 0 {
-            *out = (ret1 as u64) << 32 | (ret2 as u64);
+            *dest = (ret1 as u64) << 32 | (ret2 as u64);
             1
         } else {
             0
