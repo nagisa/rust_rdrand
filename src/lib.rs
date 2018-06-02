@@ -72,7 +72,7 @@ const RETRY_LIMIT: u8 = 127;
 
 #[cold]
 #[inline(never)]
-pub fn busy_loop_fail() -> ! {
+pub(crate) fn busy_loop_fail() -> ! {
     panic!("hardware generator failure");
 }
 
@@ -419,8 +419,8 @@ fn rdrand_works() {
 #[test]
 fn fill_fills_all_bytes() {
     let _ = RdRand::new().map(|mut r| {
-        let mut peach = [0; 128];
-        let mut banana = [0; 128];
+        let mut peach;
+        let mut banana;
         let mut start = 0;
         let mut end = 128;
         'outer: while start < end {
