@@ -24,7 +24,7 @@
 //!
 //! <table>
 //!   <tr>
-//!     <th>Architecture<br></th>
+//!     <th>Architecture</th>
 //!     <th colspan="3">Latency (cycles)</th>
 //!     <th>Maximum throughput (per core)</th>
 //!   </tr>
@@ -37,16 +37,16 @@
 //!   </tr>
 //!   <tr>
 //!     <td>AMD Ryzen</td>
-//!     <td>~1200<br></td>
+//!     <td>~1200</td>
 //!     <td>~1200</td>
 //!     <td>~2500</td>
-//!     <td>~12MB/s @ 3.7GHz<br></td>
+//!     <td>~12MB/s @ 3.7GHz</td>
 //!   </tr>
 //!   <tr>
 //!     <td>Intel Skylake</td>
-//!     <td>460<br></td>
 //!     <td>460</td>
-//!     <td>460<br></td>
+//!     <td>460</td>
+//!     <td>460</td>
 //!     <td>~72MB/s @ 4.2GHz</td>
 //!   </tr>
 //!   <tr>
@@ -332,10 +332,12 @@ macro_rules! impl_rand {
             -> Result<(), Error> {
                 #[target_feature(enable = $feat)]
                 unsafe fn imp(dest: &mut [u8])
-                -> Result<(), Error> {
+                -> Result<(), Error>
+                {
                     unsafe fn imp_less_fast(mut dest: &mut [u8], word: &mut $maxty,
                                             buffer: &mut &[u8])
-                    -> Result<(), Error> {
+                    -> Result<(), Error>
+                    {
                         while !dest.is_empty() {
                             if buffer.is_empty() {
                                 if let Some(w) = loop_rand!($maxty, $maxstep) {
