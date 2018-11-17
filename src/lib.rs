@@ -59,8 +59,6 @@
 //! </table>
 //!
 //! [Agner’s instruction tables]: http://agner.org/optimize/
-
-#![feature(slice_align_to)]
 #![no_std]
 
 extern crate rand_core;

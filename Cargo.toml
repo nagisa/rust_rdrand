@@ -9,4 +9,4 @@ repository = "https://github.com/nagisa/rust_rdrand/"
 documentation = "https://docs.rs/rdrand/0.2.0/"
 
 [dependencies]
-rand_core = { version = "0.2", default-features = false }
+rand_core = { version = "0.3", default-features = false }
