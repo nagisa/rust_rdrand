@@ -13,6 +13,14 @@ install:
   - rustc -vV
   - cargo -vV
 build: off
+
 test_script:
-  - cargo test
-  - cargo bench
+- cargo test
+
+for:
+- matrix:
+    only:
+      - TARGET: nightly-x86_64-pc-windows-msvc
+      - TARGET: nightly-i686-pc-windows-msvc
+  test_script:
+    - cargo bench
