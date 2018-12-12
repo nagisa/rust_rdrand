@@ -63,8 +63,14 @@
 
 extern crate rand_core;
 
+#[cfg(feature = "std")]
+extern crate std;
+
 use rand_core::{RngCore, CryptoRng, Error, ErrorKind};
 use core::slice;
+
+#[cfg(feature = "std")]
+use std::is_x86_feature_detected;
 
 const RETRY_LIMIT: u8 = 127;
 
@@ -135,15 +141,28 @@ mod arch {
     }
 }
 
-macro_rules! check_cpuid {
-    ("rdrand") => { {
-        const FLAG : u32 = 1 << 30;
-        ::arch::__cpuid(1).ecx & FLAG == FLAG
-    } };
-    ("rdseed") => { {
-        const FLAG : u32 = 1 << 18;
-        ::arch::__cpuid(7).ebx & FLAG == FLAG
-    } };
+#[cfg(not(feature = "std"))]
+macro_rules! is_x86_feature_detected {
+    ("rdrand") => {{
+        if cfg!(target_feature="rdrand") {
+            true
+        } else if cfg!(target_env = "sgx") {
+            false
+        } else {
+            const FLAG : u32 = 1 << 30;
+            unsafe { ::arch::__cpuid(1).ecx & FLAG == FLAG }
+        }
+    }};
+    ("rdseed") => {{
+        if cfg!(target_feature = "rdseed") {
+            true
+        } else if cfg!(target_env = "sgx") {
+            false
+        } else {
+            const FLAG : u32 = 1 << 18;
+            unsafe { ::arch::__cpuid(7).ebx & FLAG == FLAG }
+        }
+    }};
 }
 
 macro_rules! loop_rand {
@@ -171,13 +190,11 @@ macro_rules! impl_rand {
             /// instruction necessary for this generator to operate. If the instruction is not
             /// supported, an error is returned.
             pub fn new() -> Result<Self, Error> {
-                unsafe {
-                    if cfg!(target_feature=$feat) || check_cpuid!($feat) {
-                        Ok($gen(()))
-                    } else {
-                        Err(Error::new(rand_core::ErrorKind::Unavailable,
-                                       "the instruction is not supported"))
-                    }
+                if is_x86_feature_detected!($feat) {
+                    Ok($gen(()))
+                } else {
+                    Err(Error::new(rand_core::ErrorKind::Unavailable,
+                                   "the instruction is not supported"))
                 }
             }
 
