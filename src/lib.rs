@@ -63,8 +63,14 @@
 
 extern crate rand_core;
 
+#[cfg(target_env = "sgx")]
+extern crate std;
+
 use rand_core::{RngCore, CryptoRng, Error, ErrorKind};
 use core::slice;
+
+#[cfg(target_env = "sgx")]
+use std::is_x86_feature_detected;
 
 const RETRY_LIMIT: u8 = 127;
 
@@ -135,6 +141,7 @@ mod arch {
     }
 }
 
+#[cfg(not(target_env = "sgx"))]
 macro_rules! check_cpuid {
     ("rdrand") => { {
         const FLAG : u32 = 1 << 30;
@@ -144,6 +151,11 @@ macro_rules! check_cpuid {
         const FLAG : u32 = 1 << 18;
         ::arch::__cpuid(7).ebx & FLAG == FLAG
     } };
+}
+
+#[cfg(not(target_env = "sgx"))]
+macro_rules! is_x86_feature_detected {
+    ($feat:tt) => { cfg!(target_feature=$feat) || unsafe { check_cpuid!($feat) }};
 }
 
 macro_rules! loop_rand {
@@ -171,13 +183,11 @@ macro_rules! impl_rand {
             /// instruction necessary for this generator to operate. If the instruction is not
             /// supported, an error is returned.
             pub fn new() -> Result<Self, Error> {
-                unsafe {
-                    if cfg!(target_feature=$feat) || check_cpuid!($feat) {
-                        Ok($gen(()))
-                    } else {
-                        Err(Error::new(rand_core::ErrorKind::Unavailable,
-                                       "the instruction is not supported"))
-                    }
+                if is_x86_feature_detected!($feat) {
+                    Ok($gen(()))
+                } else {
+                    Err(Error::new(rand_core::ErrorKind::Unavailable,
+                                   "the instruction is not supported"))
                 }
             }
 
