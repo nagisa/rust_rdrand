@@ -66,7 +66,7 @@ extern crate rand_core;
 #[cfg(feature = "std")]
 extern crate std;
 
-mod changelog;
+pub mod changelog;
 
 use rand_core::{RngCore, CryptoRng, Error, ErrorKind};
 use core::slice;
