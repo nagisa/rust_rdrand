@@ -59,20 +59,17 @@
 //! </table>
 //!
 //! [Agner’s instruction tables]: http://agner.org/optimize/
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate rand_core;
 
 #[cfg(feature = "std")]
-extern crate std;
+extern crate core;
 
 pub mod changelog;
 
 use rand_core::{RngCore, CryptoRng, Error, ErrorKind};
 use core::slice;
-
-#[cfg(feature = "std")]
-use std::is_x86_feature_detected;
 
 const RETRY_LIMIT: u8 = 127;
 
