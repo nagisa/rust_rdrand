@@ -16,6 +16,7 @@ build: off
 
 test_script:
 - cargo test
+- cargo test --no-default-features
 
 for:
 - matrix:

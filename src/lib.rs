@@ -105,7 +105,7 @@ pub struct RdRand(());
 /// processors.
 ///
 /// This generator is not intended for general random number generation purposes and should be used
-/// to seed other generators implementing [SeedableRng].
+/// to seed other generators implementing [rand_core::SeedableRng].
 #[derive(Clone, Copy)]
 pub struct RdSeed(());
 
