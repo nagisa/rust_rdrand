@@ -2,6 +2,11 @@
 
 /// ## Breaking changes
 ///
+/// Updated rand_core dependency from `0.3` to `0.4`.
+pub mod r0_5_0 {}
+
+/// ## Breaking changes
+///
 /// Crate gained an enabled-by-default `std` feature. If you relied on rdrand being `core`-able
 /// change your dependency to appear as such:
 ///
