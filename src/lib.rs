@@ -117,8 +117,8 @@ mod arch {
 
     #[cfg(target_arch = "x86")]
     pub(crate) unsafe fn _rdrand64_step(dest: &mut u64) -> i32 {
-        let mut ret1: u32 = ::core::mem::uninitialized();
-        let mut ret2: u32 = ::core::mem::uninitialized();
+        let mut ret1: u32 = 0;
+        let mut ret2: u32 = 0;
         if _rdrand32_step(&mut ret1) != 0 && _rdrand32_step(&mut ret2) != 0 {
             *dest = (ret1 as u64) << 32 | (ret2 as u64);
             1
@@ -129,8 +129,8 @@ mod arch {
 
     #[cfg(target_arch = "x86")]
     pub(crate) unsafe fn _rdseed64_step(dest: &mut u64) -> i32 {
-        let mut ret1: u32 = ::core::mem::uninitialized();
-        let mut ret2: u32 = ::core::mem::uninitialized();
+        let mut ret1: u32 = 0;
+        let mut ret2: u32 = 0;
         if _rdseed32_step(&mut ret1) != 0 && _rdseed32_step(&mut ret2) != 0 {
             *dest = (ret1 as u64) << 32 | (ret2 as u64);
             1
@@ -168,7 +168,7 @@ macro_rules! loop_rand {
     ($el: ty, $step: path) => { {
         let mut idx = 0;
         loop {
-            let mut el: $el = ::core::mem::uninitialized();
+            let mut el: $el = 0;
             if $step(&mut el) != 0 {
                 break Some(el);
             } else if idx == RETRY_LIMIT {

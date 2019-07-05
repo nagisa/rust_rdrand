@@ -1,5 +1,8 @@
 //! Project changelog
 
+/// Replaced likely unsound use of `core::mem::uninitialized()`.
+pub mod r0_5_1 {}
+
 /// ## Breaking changes
 ///
 /// Updated rand_core dependency from `0.3` to `0.4`.
