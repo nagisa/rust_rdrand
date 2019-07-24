@@ -69,7 +69,6 @@ extern crate core;
 pub mod changelog;
 
 use rand_core::{RngCore, CryptoRng, Error, ErrorKind};
-use core::slice;
 
 const RETRY_LIMIT: u8 = 127;
 
@@ -348,32 +347,30 @@ macro_rules! impl_rand {
                 unsafe fn imp(dest: &mut [u8])
                 -> Result<(), Error>
                 {
-                    unsafe fn imp_less_fast(mut dest: &mut [u8], word: &mut $maxty,
-                                            buffer: &mut &[u8])
+                    fn slow_fill_bytes<'a>(mut left: &'a mut [u8], mut right: &'a mut [u8])
                     -> Result<(), Error>
                     {
-                        while !dest.is_empty() {
+                        let mut word;
+                        let mut buffer: &[u8] = &[];
+                        while !left.is_empty() {
                             if buffer.is_empty() {
-                                if let Some(w) = loop_rand!($maxty, $maxstep) {
-                                    *word = w;
-                                    *buffer = slice::from_raw_parts(
-                                        word as *const _ as *const u8,
-                                        ::core::mem::size_of::<$maxty>()
-                                    );
+                                if let Some(w) = unsafe { loop_rand!($maxty, $maxstep) } {
+                                    word = w.to_ne_bytes();
+                                    buffer = &word[..];
                                 } else {
                                     return Err(Error::new(ErrorKind::Unexpected,
                                                           "hardware generator failure"));
                                 }
                             }
-
-                            let len = dest.len().min(buffer.len());
+                            let len = left.len().min(buffer.len());
                             let (copy_src, leftover) = buffer.split_at(len);
-                            let (copy_dest, dest_leftover) = { dest }.split_at_mut(len);
-                            *buffer = leftover;
-                            dest = dest_leftover;
-                            ::core::ptr::copy_nonoverlapping(
-                                copy_src.as_ptr(), copy_dest.as_mut_ptr(), len
-                            );
+                            let (copy_dest, dest_leftover) = { left }.split_at_mut(len);
+                            buffer = leftover;
+                            left = dest_leftover;
+                            copy_dest.copy_from_slice(copy_src);
+                            if left.is_empty() {
+                                ::core::mem::swap(&mut left, &mut right);
+                            }
                         }
                         Ok(())
                     }
@@ -381,9 +378,6 @@ macro_rules! impl_rand {
                     let destlen = dest.len();
                     if destlen > ::core::mem::size_of::<$maxty>() {
                             let (left, mid, right) = dest.align_to_mut();
-                            let mut word = 0;
-                            let mut buffer: &[u8] = &[];
-
                             for el in mid {
                                 if let Some(val) = loop_rand!($maxty, $maxstep) {
                                     *el = val;
@@ -393,12 +387,9 @@ macro_rules! impl_rand {
                                 }
                             }
 
-                            imp_less_fast(left, &mut word, &mut buffer)?;
-                            imp_less_fast(right, &mut word, &mut buffer)
+                            slow_fill_bytes(left, right)
                     } else {
-                        let mut word = 0;
-                        let mut buffer: &[u8] = &[];
-                        imp_less_fast(dest, &mut word, &mut buffer)
+                        slow_fill_bytes(dest, &mut [])
                     }
                 }
                 unsafe { imp(dest) }
