@@ -148,7 +148,7 @@ macro_rules! is_x86_feature_detected {
             false
         } else {
             const FLAG : u32 = 1 << 30;
-            unsafe { ::arch::__cpuid(1).ecx & FLAG == FLAG }
+            unsafe { arch::__cpuid(1).ecx & FLAG == FLAG }
         }
     }};
     ("rdseed") => {{
@@ -158,7 +158,7 @@ macro_rules! is_x86_feature_detected {
             false
         } else {
             const FLAG : u32 = 1 << 18;
-            unsafe { ::arch::__cpuid(7).ebx & FLAG == FLAG }
+            unsafe { arch::__cpuid(7).ebx & FLAG == FLAG }
         }
     }};
 }
@@ -400,20 +400,20 @@ macro_rules! impl_rand {
 
 #[cfg(target_arch = "x86_64")]
 impl_rand!(RdRand, "rdrand",
-           ::arch::_rdrand16_step, ::arch::_rdrand32_step, ::arch::_rdrand64_step,
-           maxstep = ::arch::_rdrand64_step, maxty = u64);
+           arch::_rdrand16_step, arch::_rdrand32_step, arch::_rdrand64_step,
+           maxstep = arch::_rdrand64_step, maxty = u64);
 #[cfg(target_arch = "x86_64")]
 impl_rand!(RdSeed, "rdseed",
-           ::arch::_rdseed16_step, ::arch::_rdseed32_step, ::arch::_rdseed64_step,
-           maxstep = ::arch::_rdseed64_step, maxty = u64);
+           arch::_rdseed16_step, arch::_rdseed32_step, arch::_rdseed64_step,
+           maxstep = arch::_rdseed64_step, maxty = u64);
 #[cfg(target_arch = "x86")]
 impl_rand!(RdRand, "rdrand",
-           ::arch::_rdrand16_step, ::arch::_rdrand32_step, ::arch::_rdrand64_step,
-           maxstep = ::arch::_rdrand32_step, maxty = u32);
+           arch::_rdrand16_step, arch::_rdrand32_step, arch::_rdrand64_step,
+           maxstep = arch::_rdrand32_step, maxty = u32);
 #[cfg(target_arch = "x86")]
 impl_rand!(RdSeed, "rdseed",
-           ::arch::_rdseed16_step, ::arch::_rdseed32_step, ::arch::_rdseed64_step,
-           maxstep = ::arch::_rdseed32_step, maxty = u32);
+           arch::_rdseed16_step, arch::_rdseed32_step, arch::_rdseed64_step,
+           maxstep = arch::_rdseed32_step, maxty = u32);
 
 #[test]
 fn rdrand_works() {

@@ -1,5 +1,15 @@
 //! Project changelog
 
+/// Fix unsound mutable reference aliasing in the implementation of `try_fill_bytes`.
+///
+/// The affected code has been replaced with safer one where the scope of `unsafe` is reduced to
+/// the loop which obtains a random word via a native instruction.
+///
+/// ## Breaking changes
+///
+/// rustc version 1.32 is now required to build the library (up from 1.30).
+pub mod r0_6_0 {}
+
 /// Replaced likely unsound use of `core::mem::uninitialized()`.
 pub mod r0_5_1 {}
 
