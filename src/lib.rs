@@ -350,24 +350,26 @@ macro_rules! impl_rand {
                     fn slow_fill_bytes<'a>(mut left: &'a mut [u8], mut right: &'a mut [u8])
                     -> Result<(), Error>
                     {
-                        let mut word;
-                        let mut buffer: &[u8] = &[];
+                        const LEN: usize = core::mem::size_of::<$maxty>();
+                        let mut word = [0; LEN];
+                        let mut valid_range = LEN..;
                         while !left.is_empty() {
-                            if buffer.is_empty() {
-                                if let Some(w) = unsafe { loop_rand!($maxty, $maxstep) } {
-                                    word = w.to_ne_bytes();
-                                    buffer = &word[..];
-                                } else {
-                                    return Err(Error::new(ErrorKind::Unexpected,
-                                                          "hardware generator failure"));
+                            if valid_range.start >= LEN {
+                                unsafe {
+                                    if let Some(w) = loop_rand!($maxty, $maxstep) {
+                                        word = core::mem::transmute(w); // w.to_ne_bytes
+                                        valid_range = 0..;
+                                    } else {
+                                        return Err(Error::new(ErrorKind::Unexpected,
+                                                              "hardware generator failure"));
+                                    }
                                 }
                             }
-                            let len = left.len().min(buffer.len());
-                            let (copy_src, leftover) = buffer.split_at(len);
+                            let len = left.len().min(core::mem::size_of::<$maxty>() - valid_range.start);
                             let (copy_dest, dest_leftover) = { left }.split_at_mut(len);
-                            buffer = leftover;
+                            copy_dest.copy_from_slice(&word[valid_range.start..][..len]);
+                            valid_range.start += len;
                             left = dest_leftover;
-                            copy_dest.copy_from_slice(copy_src);
                             if left.is_empty() {
                                 ::core::mem::swap(&mut left, &mut right);
                             }

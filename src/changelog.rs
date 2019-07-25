@@ -10,6 +10,9 @@
 /// rustc version 1.32 is now required to build the library (up from 1.30).
 pub mod r0_6_0 {}
 
+/// Backported the soundness fix from 0.6.0.
+pub mod r0_5_2 {}
+
 /// Replaced likely unsound use of `core::mem::uninitialized()`.
 pub mod r0_5_1 {}
 
