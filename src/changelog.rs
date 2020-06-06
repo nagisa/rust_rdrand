@@ -1,5 +1,13 @@
 //! Project changelog
 
+/// ## Breaking changes
+///
+/// Upgrade to `rand_core = ^0.5.1`. This involves a major change to how errors are handled. See
+/// [`ErrorCode`](crate::ErrorCode).
+///
+/// rustc version 1.42 is now required to build the library (up from 1.32).
+pub mod r0_7_0 {}
+
 /// Fix unsound mutable reference aliasing in the implementation of `try_fill_bytes`.
 ///
 /// The affected code has been replaced with safer one where the scope of `unsafe` is reduced to

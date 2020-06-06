@@ -61,21 +61,18 @@
 //! [Agner’s instruction tables]: http://agner.org/optimize/
 #![cfg_attr(not(feature = "std"), no_std)]
 
-extern crate rand_core;
-
-#[cfg(feature = "std")]
-extern crate core;
-
 pub mod changelog;
+mod errors;
 
-use rand_core::{RngCore, CryptoRng, Error, ErrorKind};
+use errors::ErrorCode;
+use rand_core::{RngCore, CryptoRng, Error};
 
 const RETRY_LIMIT: u8 = 127;
 
 #[cold]
 #[inline(never)]
 pub(crate) fn busy_loop_fail() -> ! {
-    panic!("hardware generator failure");
+    panic!("{}", ErrorCode::HardwareFailure);
 }
 
 /// A cryptographically secure statistically uniform, non-periodic and non-deterministic random bit
@@ -85,10 +82,10 @@ pub(crate) fn busy_loop_fail() -> ! {
 /// routinely from a non-deterministic entropy source to achieve the desirable properties.
 ///
 /// This generator is a viable replacement to any generator, however, since nobody has audited
-/// Intel or AMD hardware yet, the usual disclaimers as to their suitability apply.
+/// this hardware implementation yet, the usual disclaimers as to their suitability apply.
 ///
-/// It is potentially faster than `OsRng`, but is only supported on more recent Intel (Ivy Bridge
-/// and later) and AMD (Ryzen and later) processors.
+/// It is potentially faster than `OsRng`, but is only supported by more recent architectures such
+/// as Intel Ivy Bridge and AMD Zen.
 #[derive(Clone, Copy)]
 pub struct RdRand(());
 
@@ -97,8 +94,7 @@ pub struct RdRand(());
 /// This generator produces high-entropy output and is suited to seed other pseudo-random
 /// generators.
 ///
-/// This instruction currently is only available in Intel Broadwell (and later) and AMD Ryzen
-/// processors.
+/// This instruction is only supported by recent architectures such as Intel Broadwell and AMD Zen.
 ///
 /// This generator is not intended for general random number generation purposes and should be used
 /// to seed other generators implementing [rand_core::SeedableRng].
@@ -191,8 +187,7 @@ macro_rules! impl_rand {
                 if is_x86_feature_detected!($feat) {
                     Ok($gen(()))
                 } else {
-                    Err(Error::new(rand_core::ErrorKind::Unavailable,
-                                   "the instruction is not supported"))
+                    Err(ErrorCode::UnsupportedInstruction.into())
                 }
             }
 
@@ -358,8 +353,7 @@ macro_rules! impl_rand {
                                     word = w.to_ne_bytes();
                                     buffer = &word[..];
                                 } else {
-                                    return Err(Error::new(ErrorKind::Unexpected,
-                                                          "hardware generator failure"));
+                                    return Err(ErrorCode::HardwareFailure.into());
                                 }
                             }
                             let len = left.len().min(buffer.len());
@@ -382,8 +376,7 @@ macro_rules! impl_rand {
                                 if let Some(val) = loop_rand!($maxty, $maxstep) {
                                     *el = val;
                                 } else {
-                                    return Err(Error::new(ErrorKind::Unexpected,
-                                                          "hardware generator failure"));
+                                    return Err(ErrorCode::HardwareFailure.into());
                                 }
                             }
 
@@ -415,49 +408,56 @@ impl_rand!(RdSeed, "rdseed",
            arch::_rdseed16_step, arch::_rdseed32_step, arch::_rdseed64_step,
            maxstep = arch::_rdseed32_step, maxty = u32);
 
-#[test]
-fn rdrand_works() {
-    let _ = RdRand::new().map(|mut r| {
-        r.next_u32();
-        r.next_u64();
-    });
-}
 
-#[test]
-fn fill_fills_all_bytes() {
-    let _ = RdRand::new().map(|mut r| {
-        let mut peach;
-        let mut banana;
-        let mut start = 0;
-        let mut end = 128;
-        'outer: while start < end {
-            banana = [0; 128];
-            for _ in 0..512 {
-                peach = [0; 128];
-                r.fill_bytes(&mut peach[start..end]);
-                for (b, p) in banana.iter_mut().zip(peach.iter()) {
-                    *b = *b | *p;
-                }
-                if (&banana[start..end]).iter().all(|x| *x != 0) {
-                    assert!(banana[..start].iter().all(|x| *x == 0), "all other values must be 0");
-                    assert!(banana[end..].iter().all(|x| *x == 0), "all other values must be 0");
-                    if start < 17 {
-                        start += 1;
-                    } else {
-                        end -= 3;
+#[cfg(test)]
+mod test {
+    use super::{RdRand, RdSeed};
+    use rand_core::RngCore;
+
+    #[test]
+    fn rdrand_works() {
+        let _ = RdRand::new().map(|mut r| {
+            r.next_u32();
+            r.next_u64();
+        });
+    }
+
+    #[test]
+    fn fill_fills_all_bytes() {
+        let _ = RdRand::new().map(|mut r| {
+            let mut peach;
+            let mut banana;
+            let mut start = 0;
+            let mut end = 128;
+            'outer: while start < end {
+                banana = [0; 128];
+                for _ in 0..512 {
+                    peach = [0; 128];
+                    r.fill_bytes(&mut peach[start..end]);
+                    for (b, p) in banana.iter_mut().zip(peach.iter()) {
+                        *b = *b | *p;
                     }
-                    continue 'outer;
+                    if (&banana[start..end]).iter().all(|x| *x != 0) {
+                        assert!(banana[..start].iter().all(|x| *x == 0), "all other values must be 0");
+                        assert!(banana[end..].iter().all(|x| *x == 0), "all other values must be 0");
+                        if start < 17 {
+                            start += 1;
+                        } else {
+                            end -= 3;
+                        }
+                        continue 'outer;
+                    }
                 }
+                panic!("wow, we broke it? {} {} {:?}", start, end, &banana[..])
             }
-            panic!("wow, we broke it? {} {} {:?}", start, end, &banana[..])
-        }
-    });
-}
+        });
+    }
 
-#[test]
-fn rdseed_works() {
-    let _ = RdSeed::new().map(|mut r| {
-        r.next_u32();
-        r.next_u64();
-    });
+    #[test]
+    fn rdseed_works() {
+        let _ = RdSeed::new().map(|mut r| {
+            r.next_u32();
+            r.next_u64();
+        });
+    }
 }
