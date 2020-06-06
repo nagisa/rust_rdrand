@@ -9,8 +9,15 @@ repository = "https://github.com/nagisa/rust_rdrand/"
 documentation = "https://docs.rs/rdrand/0.7.0/"
 edition = "2018"
 
+[[bench]]
+name = "rdrand"
+harness = false
+
 [dependencies]
 rand_core = { version = "0.5.1", default-features = false }
+
+[dev-dependencies]
+criterion = "0.3"
 
 [features]
 default = ["std"]

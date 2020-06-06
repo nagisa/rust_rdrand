@@ -64,15 +64,15 @@
 pub mod changelog;
 mod errors;
 
-use errors::ErrorCode;
+pub use errors::ErrorCode;
 use rand_core::{RngCore, CryptoRng, Error};
 
 const RETRY_LIMIT: u8 = 127;
 
 #[cold]
 #[inline(never)]
-pub(crate) fn busy_loop_fail() -> ! {
-    panic!("{}", ErrorCode::HardwareFailure);
+pub(crate) fn busy_loop_fail(code: ErrorCode) -> ! {
+    panic!("{}", code);
 }
 
 /// A cryptographically secure statistically uniform, non-periodic and non-deterministic random bit
@@ -165,9 +165,9 @@ macro_rules! loop_rand {
         loop {
             let mut el: $el = 0;
             if $step(&mut el) != 0 {
-                break Some(el);
+                break Ok(el);
             } else if idx == RETRY_LIMIT {
-                break None;
+                break Err(ErrorCode::HardwareFailure);
             }
             idx += 1;
         }
@@ -183,11 +183,11 @@ macro_rules! impl_rand {
             /// This constructor checks whether the CPU the program is running on supports the
             /// instruction necessary for this generator to operate. If the instruction is not
             /// supported, an error is returned.
-            pub fn new() -> Result<Self, Error> {
+            pub fn new() -> Result<Self, ErrorCode> {
                 if is_x86_feature_detected!($feat) {
                     Ok($gen(()))
                 } else {
-                    Err(ErrorCode::UnsupportedInstruction.into())
+                    Err(ErrorCode::UnsupportedInstruction)
                 }
             }
 
@@ -200,13 +200,13 @@ macro_rules! impl_rand {
             /// This method will retry calling the instruction a few times, however if all the
             /// attempts fail, it will return `None`.
             ///
-            /// In case `None` is returned, the caller should assume that an non-recoverable
-            /// hardware failure has occured and use another random number genrator instead.
+            /// In case `Err` is returned, the caller should assume that a non-recoverable failure
+            /// has occured and use another random number genrator instead.
             #[inline(always)]
-            pub fn try_next_u16(&self) -> Option<u16> {
+            pub fn try_next_u16(&self) -> Result<u16, ErrorCode> {
                 #[target_feature(enable = $feat)]
                 unsafe fn imp()
-                -> Option<u16> {
+                -> Result<u16, ErrorCode> {
                     loop_rand!(u16, $step16)
                 }
                 unsafe { imp() }
@@ -221,13 +221,13 @@ macro_rules! impl_rand {
             /// This method will retry calling the instruction a few times, however if all the
             /// attempts fail, it will return `None`.
             ///
-            /// In case `None` is returned, the caller should assume that an non-recoverable
-            /// hardware failure has occured and use another random number genrator instead.
+            /// In case `Err` is returned, the caller should assume that a non-recoverable failure
+            /// has occured and use another random number genrator instead.
             #[inline(always)]
-            pub fn try_next_u32(&self) -> Option<u32> {
+            pub fn try_next_u32(&self) -> Result<u32, ErrorCode> {
                 #[target_feature(enable = $feat)]
                 unsafe fn imp()
-                -> Option<u32> {
+                -> Result<u32, ErrorCode> {
                     loop_rand!(u32, $step32)
                 }
                 unsafe { imp() }
@@ -242,19 +242,76 @@ macro_rules! impl_rand {
             /// This method will retry calling the instruction a few times, however if all the
             /// attempts fail, it will return `None`.
             ///
-            /// In case `None` is returned, the caller should assume that an non-recoverable
-            /// hardware failure has occured and use another random number genrator instead.
+            /// In case `Err` is returned, the caller should assume that a non-recoverable failure
+            /// has occured and use another random number genrator instead.
             ///
             /// Note, that on 32-bit targets, there’s no underlying instruction to generate a
             /// 64-bit number, so it is emulated with the 32-bit version of the instruction.
             #[inline(always)]
-            pub fn try_next_u64(&self) -> Option<u64> {
+            pub fn try_next_u64(&self) -> Result<u64, ErrorCode> {
                 #[target_feature(enable = $feat)]
                 unsafe fn imp()
-                -> Option<u64> {
+                -> Result<u64, ErrorCode> {
                     loop_rand!(u64, $step64)
                 }
                 unsafe { imp() }
+            }
+
+            /// Fill a buffer `dest` with random data.
+            ///
+            /// This method will use the most appropriate variant of the instruction available on
+            /// the machine to achieve the greatest single-core throughput, however it has a
+            /// slightly higher setup cost than the plain `next_u32` or `next_u64` methods.
+            ///
+            /// The underlying instruction may fail for variety reasons (such as actual hardware
+            /// failure or exhausted entropy), however the exact reason for the failure is not
+            /// usually exposed.
+            ///
+            /// This method will retry calling the instruction a few times, however if all the
+            /// attempts fail, it will return an error.
+            ///
+            /// If an error is returned, the caller should assume that an non-recoverable hardware
+            /// failure has occured and use another random number genrator instead.
+            #[inline(always)]
+            pub fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), ErrorCode> {
+                #[target_feature(enable = $feat)]
+                unsafe fn imp(dest: &mut [u8]) -> Result<(), ErrorCode> {
+                    fn slow_fill_bytes<'a>(mut left: &'a mut [u8], mut right: &'a mut [u8])
+                    -> Result<(), ErrorCode>
+                    {
+                        let mut word;
+                        let mut buffer: &[u8] = &[];
+                        while !left.is_empty() {
+                            if buffer.is_empty() {
+                                word = unsafe { loop_rand!($maxty, $maxstep) }?.to_ne_bytes();
+                                buffer = &word[..];
+                            }
+                            let len = left.len().min(buffer.len());
+                            let (copy_src, leftover) = buffer.split_at(len);
+                            let (copy_dest, dest_leftover) = { left }.split_at_mut(len);
+                            buffer = leftover;
+                            left = dest_leftover;
+                            copy_dest.copy_from_slice(copy_src);
+                            if left.is_empty() {
+                                ::core::mem::swap(&mut left, &mut right);
+                            }
+                        }
+                        Ok(())
+                    }
+
+                    let destlen = dest.len();
+                    if destlen > ::core::mem::size_of::<$maxty>() {
+                            let (left, mid, right) = dest.align_to_mut();
+                            for el in mid {
+                                *el = loop_rand!($maxty, $maxstep)?;
+                            }
+
+                            slow_fill_bytes(left, right)
+                    } else {
+                        slow_fill_bytes(dest, &mut [])
+                    }
+                }
+                unsafe { imp(dest) }
             }
         }
 
@@ -274,10 +331,9 @@ macro_rules! impl_rand {
             /// hardware failure has occured and use another random number genrator instead.
             #[inline(always)]
             fn next_u32(&mut self) -> u32 {
-                if let Some(result) = self.try_next_u32() {
-                    result
-                } else {
-                    busy_loop_fail()
+                match self.try_next_u32() {
+                    Ok(result) => result,
+                    Err(c) => busy_loop_fail(c)
                 }
             }
 
@@ -299,10 +355,9 @@ macro_rules! impl_rand {
             /// hardware failure has occured and use another random number genrator instead.
             #[inline(always)]
             fn next_u64(&mut self) -> u64 {
-                if let Some(result) = self.try_next_u64() {
-                    result
-                } else {
-                    busy_loop_fail()
+                match self.try_next_u64() {
+                    Ok(result) => result,
+                    Err(c) => busy_loop_fail(c)
                 }
             }
 
@@ -315,8 +370,9 @@ macro_rules! impl_rand {
             /// This method will panic any time `try_fill_bytes` would return an error.
             #[inline(always)]
             fn fill_bytes(&mut self, dest: &mut [u8]) {
-                if let Err(_) = self.try_fill_bytes(dest) {
-                    busy_loop_fail()
+                match self.try_fill_bytes(dest) {
+                    Ok(result) => result,
+                    Err(c) => busy_loop_fail(c)
                 }
             }
 
@@ -336,56 +392,8 @@ macro_rules! impl_rand {
             /// If an error is returned, the caller should assume that an non-recoverable hardware
             /// failure has occured and use another random number genrator instead.
             #[inline(always)]
-            fn try_fill_bytes(&mut self, dest: &mut [u8])
-            -> Result<(), Error> {
-                #[target_feature(enable = $feat)]
-                unsafe fn imp(dest: &mut [u8])
-                -> Result<(), Error>
-                {
-                    fn slow_fill_bytes<'a>(mut left: &'a mut [u8], mut right: &'a mut [u8])
-                    -> Result<(), Error>
-                    {
-                        let mut word;
-                        let mut buffer: &[u8] = &[];
-                        while !left.is_empty() {
-                            if buffer.is_empty() {
-                                if let Some(w) = unsafe { loop_rand!($maxty, $maxstep) } {
-                                    word = w.to_ne_bytes();
-                                    buffer = &word[..];
-                                } else {
-                                    return Err(ErrorCode::HardwareFailure.into());
-                                }
-                            }
-                            let len = left.len().min(buffer.len());
-                            let (copy_src, leftover) = buffer.split_at(len);
-                            let (copy_dest, dest_leftover) = { left }.split_at_mut(len);
-                            buffer = leftover;
-                            left = dest_leftover;
-                            copy_dest.copy_from_slice(copy_src);
-                            if left.is_empty() {
-                                ::core::mem::swap(&mut left, &mut right);
-                            }
-                        }
-                        Ok(())
-                    }
-
-                    let destlen = dest.len();
-                    if destlen > ::core::mem::size_of::<$maxty>() {
-                            let (left, mid, right) = dest.align_to_mut();
-                            for el in mid {
-                                if let Some(val) = loop_rand!($maxty, $maxstep) {
-                                    *el = val;
-                                } else {
-                                    return Err(ErrorCode::HardwareFailure.into());
-                                }
-                            }
-
-                            slow_fill_bytes(left, right)
-                    } else {
-                        slow_fill_bytes(dest, &mut [])
-                    }
-                }
-                unsafe { imp(dest) }
+            fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
+                self.try_fill_bytes(dest).map_err(Into::into)
             }
         }
     }
