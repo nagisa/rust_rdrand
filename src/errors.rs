@@ -3,10 +3,13 @@ use core::{
     fmt::{self, Display, Formatter},
 };
 
+/// Errors in this library
 #[repr(u8)]
 #[derive(Debug, Copy, Clone)]
 pub enum ErrorCode {
+    /// The hardware instruction is not supported
     UnsupportedInstruction,
+    /// There was a hardware failure
     HardwareFailure,
 }
 
@@ -41,7 +44,7 @@ impl std::error::Error for ErrorCode { }
 impl Display for ErrorCode {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.write_str(match self {
-            ErrorCode::UnsupportedInstruction => "the rdrand instruction is not supported",
+            ErrorCode::UnsupportedInstruction => "the hardware instruction is not supported",
             ErrorCode::HardwareFailure => "hardware generator failure",
         })
     }
