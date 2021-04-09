@@ -96,32 +96,32 @@ mod test {
 
     #[test]
     fn error_code_send() {
-        fn assert_send<T: Send>() {};
+        fn assert_send<T: Send>() {}
         assert_send::<ErrorCode>();
     }
 
     #[test]
     fn error_code_sync() {
-        fn assert_sync<T: Sync>() {};
+        fn assert_sync<T: Sync>() {}
         assert_sync::<ErrorCode>();
     }
 
     #[test]
     fn error_code_copy() {
-        fn assert_copy<T: Copy>() {};
+        fn assert_copy<T: Copy>() {}
         assert_copy::<ErrorCode>();
     }
 
     #[test]
     fn error_code_clone() {
-        fn assert_clone<T: Clone>() {};
+        fn assert_clone<T: Clone>() {}
         assert_clone::<ErrorCode>();
     }
 
     #[test]
     #[cfg(feature = "std")]
     fn error_code_error() {
-        fn assert_error<T: std::error::Error>() {};
+        fn assert_error<T: std::error::Error>() {}
         assert_error::<ErrorCode>();
     }
 
