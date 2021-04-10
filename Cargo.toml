@@ -6,7 +6,7 @@ description = "An implementation of random number generator based on rdrand and 
 keywords = ["rand", "rdrand", "rdseed", "random"]
 license = "ISC"
 repository = "https://github.com/nagisa/rust_rdrand/"
-documentation = "https://docs.rs/rdrand/0.7.0/"
+documentation = "https://docs.rs/rdrand/0.8.0/"
 edition = "2018"
 
 [[bench]]
