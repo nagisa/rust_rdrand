@@ -67,8 +67,6 @@ mod errors;
 pub use errors::ErrorCode;
 use rand_core::{RngCore, CryptoRng, Error};
 
-const RETRY_LIMIT: u8 = 127;
-
 #[cold]
 #[inline(never)]
 pub(crate) fn busy_loop_fail(code: ErrorCode) -> ! {
@@ -114,24 +112,18 @@ mod arch {
     pub(crate) unsafe fn _rdrand64_step(dest: &mut u64) -> i32 {
         let mut ret1: u32 = 0;
         let mut ret2: u32 = 0;
-        if _rdrand32_step(&mut ret1) != 0 && _rdrand32_step(&mut ret2) != 0 {
-            *dest = (ret1 as u64) << 32 | (ret2 as u64);
-            1
-        } else {
-            0
-        }
+        let ok = _rdrand32_step(&mut ret1) & _rdrand32_step(&mut ret2);
+        *dest = (ret1 as u64) << 32 | (ret2 as u64);
+        ok
     }
 
     #[cfg(target_arch = "x86")]
     pub(crate) unsafe fn _rdseed64_step(dest: &mut u64) -> i32 {
         let mut ret1: u32 = 0;
         let mut ret2: u32 = 0;
-        if _rdseed32_step(&mut ret1) != 0 && _rdseed32_step(&mut ret2) != 0 {
-            *dest = (ret1 as u64) << 32 | (ret2 as u64);
-            1
-        } else {
-            0
-        }
+        let ok = _rdseed32_step(&mut ret1) & _rdseed32_step(&mut ret2);
+        *dest = (ret1 as u64) << 32 | (ret2 as u64);
+        ok
     }
 }
 
@@ -159,19 +151,42 @@ macro_rules! is_x86_feature_detected {
     }};
 }
 
+// See the following documentation for usage (in particular wrt retries) recommendations:
+//
+// https://software.intel.com/content/www/us/en/develop/articles/intel-digital-random-number-generator-drng-software-implementation-guide.html
 macro_rules! loop_rand {
-    ($el: ty, $step: path) => { {
+    ("rdrand", $el: ty, $step: path) => {{
+        let mut idx = 0;
+        loop {
+            let mut el: $el = 0;
+            if $step(&mut el) != 0 {
+                if el == 0 || el == !0 {
+                    // Certain AMD CPUs may return broken data for `rdrand`. In those cases they
+                    // will return a bitpattern where all-ones is set. In case this was a
+                    // false-positive we just try again. If this happens `RETRY_LIMIT` times, we
+                    // will naturally fall into the `HardwareFailure` branch.
+                } else {
+                    break Ok(el);
+                }
+            } else if idx == 10 {
+                break Err(ErrorCode::HardwareFailure);
+            }
+            idx += 1;
+        }
+    }};
+    ("rdseed", $el: ty, $step: path) => {{
         let mut idx = 0;
         loop {
             let mut el: $el = 0;
             if $step(&mut el) != 0 {
                 break Ok(el);
-            } else if idx == RETRY_LIMIT {
+            } else if idx == 127 {
                 break Err(ErrorCode::HardwareFailure);
             }
             idx += 1;
+            arch::_mm_pause();
         }
-    } }
+    }};
 }
 
 macro_rules! impl_rand {
@@ -207,7 +222,7 @@ macro_rules! impl_rand {
                 #[target_feature(enable = $feat)]
                 unsafe fn imp()
                 -> Result<u16, ErrorCode> {
-                    loop_rand!(u16, $step16)
+                    loop_rand!($feat, u16, $step16)
                 }
                 unsafe { imp() }
             }
@@ -228,7 +243,7 @@ macro_rules! impl_rand {
                 #[target_feature(enable = $feat)]
                 unsafe fn imp()
                 -> Result<u32, ErrorCode> {
-                    loop_rand!(u32, $step32)
+                    loop_rand!($feat, u32, $step32)
                 }
                 unsafe { imp() }
             }
@@ -252,7 +267,7 @@ macro_rules! impl_rand {
                 #[target_feature(enable = $feat)]
                 unsafe fn imp()
                 -> Result<u64, ErrorCode> {
-                    loop_rand!(u64, $step64)
+                    loop_rand!($feat, u64, $step64)
                 }
                 unsafe { imp() }
             }
@@ -283,7 +298,7 @@ macro_rules! impl_rand {
                         let mut buffer: &[u8] = &[];
                         while !left.is_empty() {
                             if buffer.is_empty() {
-                                word = unsafe { loop_rand!($maxty, $maxstep) }?.to_ne_bytes();
+                                word = unsafe { loop_rand!($feat, $maxty, $maxstep) }?.to_ne_bytes();
                                 buffer = &word[..];
                             }
                             let len = left.len().min(buffer.len());
@@ -303,7 +318,7 @@ macro_rules! impl_rand {
                     if destlen > ::core::mem::size_of::<$maxty>() {
                             let (left, mid, right) = dest.align_to_mut();
                             for el in mid {
-                                *el = loop_rand!($maxty, $maxstep)?;
+                                *el = loop_rand!($feat, $maxty, $maxstep)?;
                             }
 
                             slow_fill_bytes(left, right)
@@ -398,6 +413,7 @@ macro_rules! impl_rand {
         }
     }
 }
+
 
 #[cfg(target_arch = "x86_64")]
 impl_rand!(RdRand, "rdrand",
