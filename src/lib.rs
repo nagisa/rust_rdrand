@@ -65,7 +65,7 @@ pub mod changelog;
 mod errors;
 
 pub use errors::ErrorCode;
-use rand_core::{RngCore, CryptoRng, Error};
+use rand_core::{CryptoRng, Error, RngCore};
 
 #[cold]
 #[inline(never)]
@@ -103,10 +103,10 @@ impl CryptoRng for RdRand {}
 impl CryptoRng for RdSeed {}
 
 mod arch {
-    #[cfg(target_arch = "x86_64")]
-    pub use core::arch::x86_64::*;
     #[cfg(target_arch = "x86")]
     pub use core::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    pub use core::arch::x86_64::*;
 
     #[cfg(target_arch = "x86")]
     pub(crate) unsafe fn _rdrand64_step(dest: &mut u64) -> i32 {
@@ -127,30 +127,6 @@ mod arch {
     }
 }
 
-#[cfg(not(feature = "std"))]
-macro_rules! is_x86_feature_detected {
-    ("rdrand") => {{
-        if cfg!(target_feature="rdrand") {
-            true
-        } else if cfg!(target_env = "sgx") {
-            false
-        } else {
-            const FLAG : u32 = 1 << 30;
-            unsafe { arch::__cpuid(1).ecx & FLAG == FLAG }
-        }
-    }};
-    ("rdseed") => {{
-        if cfg!(target_feature = "rdseed") {
-            true
-        } else if cfg!(target_env = "sgx") {
-            false
-        } else {
-            const FLAG : u32 = 1 << 18;
-            unsafe { arch::__cpuid(7).ebx & FLAG == FLAG }
-        }
-    }};
-}
-
 // See the following documentation for usage (in particular wrt retries) recommendations:
 //
 // https://software.intel.com/content/www/us/en/develop/articles/intel-digital-random-number-generator-drng-software-implementation-guide.html
@@ -160,14 +136,7 @@ macro_rules! loop_rand {
         loop {
             let mut el: $el = 0;
             if $step(&mut el) != 0 {
-                if el == 0 || el == !0 {
-                    // Certain AMD CPUs may return broken data for `rdrand`. In those cases they
-                    // will return a bitpattern where all-ones is set. In case this was a
-                    // false-positive we just try again. If this happens `RETRY_LIMIT` times, we
-                    // will naturally fall into the `HardwareFailure` branch.
-                } else {
-                    break Ok(el);
-                }
+                break Ok(el);
             } else if idx == 10 {
                 break Err(ErrorCode::HardwareFailure);
             }
@@ -189,6 +158,43 @@ macro_rules! loop_rand {
     }};
 }
 
+// NB: On AMD processor families < 0x17, we want to unconditionally disable RDRAND
+// and RDSEED. Executing these instructions on these processors can return
+// non-random data (0) while also reporting a success.
+//
+// See:
+// * https://github.com/systemd/systemd/issues/11810
+// * https://lore.kernel.org/all/776cb5c2d33e7fd0d2893904724c0e52b394f24a.1565817448.git.thomas.lendacky@amd.com/
+//
+// We take extra care to do so even if `-Ctarget-features=+rdrand` have been
+// specified, in order to prevent users from shooting themselves in their feet.
+macro_rules! is_available {
+    ("rdrand") => {{
+        const FLAG: u32 = 1 << 30;
+        let cpuid0 = unsafe { arch::__cpuid(0) };
+        if let (0x68747541, 0x444D4163, 0x69746E65) = (cpuid0.ebx, cpuid0.ecx, cpuid0.edx) {
+            // This is an AuthenticAMD chip.
+            let cpuid1 = unsafe { arch::__cpuid(1) };
+            let family = ((cpuid1.eax >> 8) & 0xF) + ((cpuid1.eax >> 20) & 0xFF);
+            (cpuid1.ecx & FLAG == FLAG) && (family >= 0x17)
+        } else {
+            cfg!(target_feature="rdrand") || unsafe { arch::__cpuid(1).ecx & FLAG == FLAG }
+        }
+    }};
+    ("rdseed") => {{
+        const FLAG : u32 = 1 << 18;
+        let cpuid0 = unsafe { arch::__cpuid(0) };
+        if let (0x68747541, 0x444D4163, 0x69746E65) = (cpuid0.ebx, cpuid0.ecx, cpuid0.edx) {
+            let cpuid1 = unsafe { arch::__cpuid(1) };
+            let family = ((cpuid1.eax >> 8) & 0xF) + ((cpuid1.eax >> 20) & 0xFF);
+            (family >= 0x17) && unsafe { arch::__cpuid(7).ebx & FLAG == FLAG }
+        } else {
+            cfg!(target_feature="rdrand") || unsafe { arch::__cpuid(7).ebx & FLAG == FLAG }
+        }
+    }};
+}
+
+
 macro_rules! impl_rand {
     ($gen:ident, $feat:tt, $step16: path, $step32:path, $step64:path,
      maxstep = $maxstep:path, maxty = $maxty: ty) => {
@@ -199,7 +205,13 @@ macro_rules! impl_rand {
             /// instruction necessary for this generator to operate. If the instruction is not
             /// supported, an error is returned.
             pub fn new() -> Result<Self, ErrorCode> {
-                if is_x86_feature_detected!($feat) {
+                if cfg!(target_env="sgx") {
+                    if cfg!(target_feature=$feat) {
+                        Ok($gen(()))
+                    } else {
+                        Err(ErrorCode::UnsupportedInstruction)
+                    }
+                } else if is_available!($feat) {
                     Ok($gen(()))
                 } else {
                     Err(ErrorCode::UnsupportedInstruction)
@@ -220,8 +232,7 @@ macro_rules! impl_rand {
             #[inline(always)]
             pub fn try_next_u16(&self) -> Result<u16, ErrorCode> {
                 #[target_feature(enable = $feat)]
-                unsafe fn imp()
-                -> Result<u16, ErrorCode> {
+                unsafe fn imp() -> Result<u16, ErrorCode> {
                     loop_rand!($feat, u16, $step16)
                 }
                 unsafe { imp() }
@@ -241,8 +252,7 @@ macro_rules! impl_rand {
             #[inline(always)]
             pub fn try_next_u32(&self) -> Result<u32, ErrorCode> {
                 #[target_feature(enable = $feat)]
-                unsafe fn imp()
-                -> Result<u32, ErrorCode> {
+                unsafe fn imp() -> Result<u32, ErrorCode> {
                     loop_rand!($feat, u32, $step32)
                 }
                 unsafe { imp() }
@@ -265,8 +275,7 @@ macro_rules! impl_rand {
             #[inline(always)]
             pub fn try_next_u64(&self) -> Result<u64, ErrorCode> {
                 #[target_feature(enable = $feat)]
-                unsafe fn imp()
-                -> Result<u64, ErrorCode> {
+                unsafe fn imp() -> Result<u64, ErrorCode> {
                     loop_rand!($feat, u64, $step64)
                 }
                 unsafe { imp() }
@@ -291,14 +300,16 @@ macro_rules! impl_rand {
             pub fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), ErrorCode> {
                 #[target_feature(enable = $feat)]
                 unsafe fn imp(dest: &mut [u8]) -> Result<(), ErrorCode> {
-                    fn slow_fill_bytes<'a>(mut left: &'a mut [u8], mut right: &'a mut [u8])
-                    -> Result<(), ErrorCode>
-                    {
+                    fn slow_fill_bytes<'a>(
+                        mut left: &'a mut [u8],
+                        mut right: &'a mut [u8],
+                    ) -> Result<(), ErrorCode> {
                         let mut word;
                         let mut buffer: &[u8] = &[];
                         while !left.is_empty() {
                             if buffer.is_empty() {
-                                word = unsafe { loop_rand!($feat, $maxty, $maxstep) }?.to_ne_bytes();
+                                word =
+                                    unsafe { loop_rand!($feat, $maxty, $maxstep) }?.to_ne_bytes();
                                 buffer = &word[..];
                             }
                             let len = left.len().min(buffer.len());
@@ -316,12 +327,12 @@ macro_rules! impl_rand {
 
                     let destlen = dest.len();
                     if destlen > ::core::mem::size_of::<$maxty>() {
-                            let (left, mid, right) = dest.align_to_mut();
-                            for el in mid {
-                                *el = loop_rand!($feat, $maxty, $maxstep)?;
-                            }
+                        let (left, mid, right) = dest.align_to_mut();
+                        for el in mid {
+                            *el = loop_rand!($feat, $maxty, $maxstep)?;
+                        }
 
-                            slow_fill_bytes(left, right)
+                        slow_fill_bytes(left, right)
                     } else {
                         slow_fill_bytes(dest, &mut [])
                     }
@@ -348,7 +359,7 @@ macro_rules! impl_rand {
             fn next_u32(&mut self) -> u32 {
                 match self.try_next_u32() {
                     Ok(result) => result,
-                    Err(c) => busy_loop_fail(c)
+                    Err(c) => busy_loop_fail(c),
                 }
             }
 
@@ -372,7 +383,7 @@ macro_rules! impl_rand {
             fn next_u64(&mut self) -> u64 {
                 match self.try_next_u64() {
                     Ok(result) => result,
-                    Err(c) => busy_loop_fail(c)
+                    Err(c) => busy_loop_fail(c),
                 }
             }
 
@@ -387,7 +398,7 @@ macro_rules! impl_rand {
             fn fill_bytes(&mut self, dest: &mut [u8]) {
                 match self.try_fill_bytes(dest) {
                     Ok(result) => result,
-                    Err(c) => busy_loop_fail(c)
+                    Err(c) => busy_loop_fail(c),
                 }
             }
 
@@ -411,32 +422,66 @@ macro_rules! impl_rand {
                 self.try_fill_bytes(dest).map_err(Into::into)
             }
         }
-    }
+    };
 }
 
-
 #[cfg(target_arch = "x86_64")]
-impl_rand!(RdRand, "rdrand",
-           arch::_rdrand16_step, arch::_rdrand32_step, arch::_rdrand64_step,
-           maxstep = arch::_rdrand64_step, maxty = u64);
+impl_rand!(
+    RdRand,
+    "rdrand",
+    arch::_rdrand16_step,
+    arch::_rdrand32_step,
+    arch::_rdrand64_step,
+    maxstep = arch::_rdrand64_step,
+    maxty = u64
+);
 #[cfg(target_arch = "x86_64")]
-impl_rand!(RdSeed, "rdseed",
-           arch::_rdseed16_step, arch::_rdseed32_step, arch::_rdseed64_step,
-           maxstep = arch::_rdseed64_step, maxty = u64);
+impl_rand!(
+    RdSeed,
+    "rdseed",
+    arch::_rdseed16_step,
+    arch::_rdseed32_step,
+    arch::_rdseed64_step,
+    maxstep = arch::_rdseed64_step,
+    maxty = u64
+);
 #[cfg(target_arch = "x86")]
-impl_rand!(RdRand, "rdrand",
-           arch::_rdrand16_step, arch::_rdrand32_step, arch::_rdrand64_step,
-           maxstep = arch::_rdrand32_step, maxty = u32);
+impl_rand!(
+    RdRand,
+    "rdrand",
+    arch::_rdrand16_step,
+    arch::_rdrand32_step,
+    arch::_rdrand64_step,
+    maxstep = arch::_rdrand32_step,
+    maxty = u32
+);
 #[cfg(target_arch = "x86")]
-impl_rand!(RdSeed, "rdseed",
-           arch::_rdseed16_step, arch::_rdseed32_step, arch::_rdseed64_step,
-           maxstep = arch::_rdseed32_step, maxty = u32);
-
+impl_rand!(
+    RdSeed,
+    "rdseed",
+    arch::_rdseed16_step,
+    arch::_rdseed32_step,
+    arch::_rdseed64_step,
+    maxstep = arch::_rdseed32_step,
+    maxty = u32
+);
 
 #[cfg(test)]
 mod test {
     use super::{RdRand, RdSeed};
     use rand_core::RngCore;
+
+    #[test]
+    fn is_rdrand_available() {
+        // NB: this test can fail when run on machines without the instruction.
+        assert!(RdRand::new().is_ok());
+    }
+
+    #[test]
+    fn is_available_rdseed() {
+        // NB: this test can fail when run on machines without the instruction.
+        assert!(RdSeed::new().is_ok());
+    }
 
     #[test]
     fn rdrand_works() {
@@ -462,8 +507,14 @@ mod test {
                         *b = *b | *p;
                     }
                     if (&banana[start..end]).iter().all(|x| *x != 0) {
-                        assert!(banana[..start].iter().all(|x| *x == 0), "all other values must be 0");
-                        assert!(banana[end..].iter().all(|x| *x == 0), "all other values must be 0");
+                        assert!(
+                            banana[..start].iter().all(|x| *x == 0),
+                            "all other values must be 0"
+                        );
+                        assert!(
+                            banana[end..].iter().all(|x| *x == 0),
+                            "all other values must be 0"
+                        );
                         if start < 17 {
                             start += 1;
                         } else {
