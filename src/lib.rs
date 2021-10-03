@@ -472,18 +472,6 @@ mod test {
     use rand_core::RngCore;
 
     #[test]
-    fn is_rdrand_available() {
-        // NB: this test can fail when run on machines without the instruction.
-        assert!(RdRand::new().is_ok());
-    }
-
-    #[test]
-    fn is_available_rdseed() {
-        // NB: this test can fail when run on machines without the instruction.
-        assert!(RdSeed::new().is_ok());
-    }
-
-    #[test]
     fn rdrand_works() {
         let _ = RdRand::new().map(|mut r| {
             r.next_u32();
