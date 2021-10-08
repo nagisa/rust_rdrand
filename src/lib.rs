@@ -158,42 +158,61 @@ macro_rules! loop_rand {
     }};
 }
 
-// NB: On AMD processor families < 0x17, we want to unconditionally disable RDRAND
-// and RDSEED. Executing these instructions on these processors can return
-// non-random data (0) while also reporting a success.
-//
-// See:
-// * https://github.com/systemd/systemd/issues/11810
-// * https://lore.kernel.org/all/776cb5c2d33e7fd0d2893904724c0e52b394f24a.1565817448.git.thomas.lendacky@amd.com/
-//
-// We take extra care to do so even if `-Ctarget-features=+rdrand` have been
-// specified, in order to prevent users from shooting themselves in their feet.
+#[inline(always)]
+fn authentic_amd() -> bool {
+    let cpuid0 = unsafe { arch::__cpuid(0) };
+    matches!(
+        (cpuid0.ebx, cpuid0.ecx, cpuid0.edx),
+        (0x68747541, 0x444D4163, 0x69746E65)
+    )
+}
+
+#[inline(always)]
+fn amd_family(cpuid1: &arch::CpuidResult) -> u32 {
+    ((cpuid1.eax >> 8) & 0xF) + ((cpuid1.eax >> 20) & 0xFF)
+}
+
+#[inline(always)]
+fn has_rdrand(cpuid1: &arch::CpuidResult) -> bool {
+    const FLAG: u32 = 1 << 30;
+    cpuid1.ecx & FLAG == FLAG
+}
+
+#[inline(always)]
+fn has_rdseed() -> bool {
+    const FLAG: u32 = 1 << 18;
+    unsafe { arch::__cpuid(7).ebx & FLAG == FLAG }
+}
+
+/// NB: On AMD processor families < 0x17, we want to unconditionally disable RDRAND
+/// and RDSEED. Executing these instructions on these processors can return
+/// non-random data (0) while also reporting a success.
+///
+/// See:
+/// * https://github.com/systemd/systemd/issues/11810
+/// * https://lore.kernel.org/all/776cb5c2d33e7fd0d2893904724c0e52b394f24a.1565817448.git.thomas.lendacky@amd.com/
+///
+/// We take extra care to do so even if `-Ctarget-features=+rdrand` have been
+/// specified, in order to prevent users from shooting themselves in their feet.
+const FIRST_GOOD_AMD_FAMILY: u32 = 0x17;
+
 macro_rules! is_available {
     ("rdrand") => {{
-        const FLAG: u32 = 1 << 30;
-        let cpuid0 = unsafe { arch::__cpuid(0) };
-        if let (0x68747541, 0x444D4163, 0x69746E65) = (cpuid0.ebx, cpuid0.ecx, cpuid0.edx) {
-            // This is an AuthenticAMD chip.
+        if authentic_amd() {
             let cpuid1 = unsafe { arch::__cpuid(1) };
-            let family = ((cpuid1.eax >> 8) & 0xF) + ((cpuid1.eax >> 20) & 0xFF);
-            (cpuid1.ecx & FLAG == FLAG) && (family >= 0x17)
+            has_rdrand(&cpuid1) && (amd_family(&cpuid1) >= FIRST_GOOD_AMD_FAMILY)
         } else {
-            cfg!(target_feature="rdrand") || unsafe { arch::__cpuid(1).ecx & FLAG == FLAG }
+            cfg!(target_feature = "rdrand") || has_rdrand(&unsafe { arch::__cpuid(1) })
         }
     }};
     ("rdseed") => {{
-        const FLAG : u32 = 1 << 18;
-        let cpuid0 = unsafe { arch::__cpuid(0) };
-        if let (0x68747541, 0x444D4163, 0x69746E65) = (cpuid0.ebx, cpuid0.ecx, cpuid0.edx) {
-            let cpuid1 = unsafe { arch::__cpuid(1) };
-            let family = ((cpuid1.eax >> 8) & 0xF) + ((cpuid1.eax >> 20) & 0xFF);
-            (family >= 0x17) && unsafe { arch::__cpuid(7).ebx & FLAG == FLAG }
+        if authentic_amd() {
+            (amd_family(&unsafe { arch::__cpuid(1) }) >= FIRST_GOOD_AMD_FAMILY) && has_rdseed()
         } else {
-            cfg!(target_feature="rdrand") || unsafe { arch::__cpuid(7).ebx & FLAG == FLAG }
+            cfg!(target_feature = "rdrand") || has_rdseed()
         }
     }};
 }
-
 
 macro_rules! impl_rand {
     ($gen:ident, $feat:tt, $step16: path, $step32:path, $step64:path,
@@ -205,8 +224,8 @@ macro_rules! impl_rand {
             /// instruction necessary for this generator to operate. If the instruction is not
             /// supported, an error is returned.
             pub fn new() -> Result<Self, ErrorCode> {
-                if cfg!(target_env="sgx") {
-                    if cfg!(target_feature=$feat) {
+                if cfg!(target_env = "sgx") {
+                    if cfg!(target_feature = $feat) {
                         Ok($gen(()))
                     } else {
                         Err(ErrorCode::UnsupportedInstruction)
