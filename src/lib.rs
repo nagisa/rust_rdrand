@@ -200,14 +200,14 @@ macro_rules! is_available {
     ("rdrand") => {{
         if authentic_amd() {
             let cpuid1 = unsafe { arch::__cpuid(1) };
-            has_rdrand(&cpuid1) && (amd_family(&cpuid1) >= FIRST_GOOD_AMD_FAMILY)
+            has_rdrand(&cpuid1) && amd_family(&cpuid1) >= FIRST_GOOD_AMD_FAMILY
         } else {
             cfg!(target_feature = "rdrand") || has_rdrand(&unsafe { arch::__cpuid(1) })
         }
     }};
     ("rdseed") => {{
         if authentic_amd() {
-            (amd_family(&unsafe { arch::__cpuid(1) }) >= FIRST_GOOD_AMD_FAMILY) && has_rdseed()
+            amd_family(&unsafe { arch::__cpuid(1) }) >= FIRST_GOOD_AMD_FAMILY && has_rdseed()
         } else {
             cfg!(target_feature = "rdrand") || has_rdseed()
         }
@@ -325,7 +325,13 @@ macro_rules! impl_rand {
                     ) -> Result<(), ErrorCode> {
                         let mut word;
                         let mut buffer: &[u8] = &[];
-                        while !left.is_empty() {
+                        loop {
+                            if left.is_empty() {
+                                if right.is_empty() {
+                                    break;
+                                }
+                                ::core::mem::swap(&mut left, &mut right);
+                            }
                             if buffer.is_empty() {
                                 word =
                                     unsafe { loop_rand!($feat, $maxty, $maxstep) }?.to_ne_bytes();
@@ -337,9 +343,6 @@ macro_rules! impl_rand {
                             buffer = leftover;
                             left = dest_leftover;
                             copy_dest.copy_from_slice(copy_src);
-                            if left.is_empty() {
-                                ::core::mem::swap(&mut left, &mut right);
-                            }
                         }
                         Ok(())
                     }
@@ -498,39 +501,48 @@ mod test {
         });
     }
 
+    #[repr(C, align(8))]
+    struct FillBuffer([u8; 64]);
+
     #[test]
     fn fill_fills_all_bytes() {
         let _ = RdRand::new().map(|mut r| {
-            let mut peach;
-            let mut banana;
-            let mut start = 0;
-            let mut end = 128;
-            'outer: while start < end {
-                banana = [0; 128];
+            let mut test_buffer;
+            let mut fill_buffer = FillBuffer([0; 64]); // make sure buffer is aligned to 8-bytes...
+            let test_cases = [
+                (0, 64), // well aligned
+                (8, 64), // well aligned
+                (0, 64), // well aligned
+                (5, 64), // left is non-empty, right is empty.
+                (0, 63), // left is empty, right is non-empty.
+                (5, 63), // left and right both are non-empty.
+                (5, 61), // left and right both are non-empty.
+                (0, 8),   // 1 word-worth of data, aligned.
+                (1, 9),   // 1 word-worth of data, misaligned.
+                (0, 7),   // less than 1 word of data.
+                (1, 7),   // less than 1 word of data.
+            ];
+            'outer: for &(start, end) in &test_cases {
+                test_buffer = [0; 64];
                 for _ in 0..512 {
-                    peach = [0; 128];
-                    r.fill_bytes(&mut peach[start..end]);
-                    for (b, p) in banana.iter_mut().zip(peach.iter()) {
+                    fill_buffer.0 = [0; 64];
+                    r.fill_bytes(&mut fill_buffer.0[start..end]);
+                    for (b, p) in test_buffer.iter_mut().zip(fill_buffer.0.iter()) {
                         *b = *b | *p;
                     }
-                    if (&banana[start..end]).iter().all(|x| *x != 0) {
+                    if (&test_buffer[start..end]).iter().all(|x| *x != 0) {
                         assert!(
-                            banana[..start].iter().all(|x| *x == 0),
+                            test_buffer[..start].iter().all(|x| *x == 0),
                             "all other values must be 0"
                         );
                         assert!(
-                            banana[end..].iter().all(|x| *x == 0),
+                            test_buffer[end..].iter().all(|x| *x == 0),
                             "all other values must be 0"
                         );
-                        if start < 17 {
-                            start += 1;
-                        } else {
-                            end -= 3;
-                        }
                         continue 'outer;
                     }
                 }
-                panic!("wow, we broke it? {} {} {:?}", start, end, &banana[..])
+                panic!("wow, we broke it? {} {} {:?}", start, end, &test_buffer[..])
             }
         });
     }

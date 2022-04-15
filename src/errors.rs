@@ -18,9 +18,7 @@ impl ErrorCode {
     const fn as_randcore_code(self) -> core::num::NonZeroU32 {
         /// Arbitrary, off top of head bitmask for error codes that come from rdrand
         const RDRAND_TAG: u32 = rand_core::Error::CUSTOM_START + 0x3D34_7D00;
-        unsafe {
-            core::num::NonZeroU32::new_unchecked(RDRAND_TAG + self as u32)
-        }
+        unsafe { core::num::NonZeroU32::new_unchecked(RDRAND_TAG + self as u32) }
     }
 }
 
@@ -39,7 +37,7 @@ impl From<ErrorCode> for rand_core::Error {
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for ErrorCode { }
+impl std::error::Error for ErrorCode {}
 
 impl Display for ErrorCode {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -54,7 +52,7 @@ impl Display for ErrorCode {
 pub struct NotAnErrorCode;
 
 #[cfg(feature = "std")]
-impl std::error::Error for NotAnErrorCode { }
+impl std::error::Error for NotAnErrorCode {}
 
 impl Display for NotAnErrorCode {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -91,8 +89,8 @@ impl TryFrom<rand_core::Error> for ErrorCode {
 #[cfg(test)]
 mod test {
     use super::ErrorCode;
-    use rand_core::Error;
     use core::convert::TryInto;
+    use rand_core::Error;
 
     #[test]
     fn error_code_send() {

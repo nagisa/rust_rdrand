@@ -1,5 +1,5 @@
-use rand_core::RngCore;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use rand_core::RngCore;
 
 fn bench_rdrand(c: &mut Criterion) {
     let mut gen = match rdrand::RdRand::new() {
