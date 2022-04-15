@@ -1,5 +1,18 @@
 //! Project changelog
 
+
+/// Fix the implementation of `try_fill_bytes` when the buffer is aligned but the size is not a
+/// multiple of a word size.
+pub mod r0_8_2 {}
+
+/// Disallow use of `rdrand`/`rdseed` on known-broken AMD systems.
+pub mod r0_8_1 {}
+
+/// ## Breaking changes
+///
+/// * Upgrade to `rand_core = ^0.6.0`.
+pub mod r0_8_0 {}
+
 /// ## Breaking changes
 ///
 /// Upgrade to `rand_core = ^0.5.1`. This involves a major change to how errors are handled. See

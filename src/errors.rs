@@ -64,7 +64,11 @@ impl TryFrom<&rand_core::Error> for ErrorCode {
     type Error = NotAnErrorCode;
     #[cfg(feature = "std")]
     fn try_from(error: &rand_core::Error) -> Result<Self, Self::Error> {
-        error.inner().downcast_ref::<ErrorCode>().copied().ok_or(NotAnErrorCode)
+        error
+            .inner()
+            .downcast_ref::<ErrorCode>()
+            .copied()
+            .ok_or(NotAnErrorCode)
     }
     #[cfg(not(feature = "std"))]
     fn try_from(error: &rand_core::Error) -> Result<Self, Self::Error> {
