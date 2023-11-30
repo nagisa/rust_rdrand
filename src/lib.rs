@@ -237,6 +237,16 @@ macro_rules! impl_rand {
                 }
             }
 
+            /// Create a new instance of the random number generator.
+            ///
+            /// # Safety
+            ///
+            /// This constructor is unsafe because it doesn't check that the CPU supports the
+            /// instruction, but devolves this responsibility to the caller.
+            pub unsafe fn new_unchecked() -> Self {
+                $gen(())
+            }
+
             /// Generate a single random `u16` value.
             ///
             /// The underlying instruction may fail for variety reasons (such as actual hardware
