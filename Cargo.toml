@@ -1,6 +1,6 @@
 [package]
 name = "rdrand"
-version = "0.8.2"
+version = "0.8.3"
 authors = ["Simonas Kazlauskas <rdrand@kazlauskas.me>"]
 description = "An implementation of random number generator based on rdrand and rdseed instructions"
 keywords = ["rand", "rdrand", "rdseed", "random"]
