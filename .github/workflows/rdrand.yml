@@ -6,7 +6,7 @@ on:
     - '*.mkd'
     - 'LICENSE'
   pull_request:
-    types: [opened, repoened, synchronize]
+    types: [opened, reopened, synchronize]
 
 jobs:
   test:
@@ -14,12 +14,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust_toolchain: [nightly, stable, 1.46.0]
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        # toolchain 1.46 cannot parse edition 2021, libc requires MSRV 1.63
+        rust_toolchain: [nightly, stable, 1.63]
+        # doesn't compile on Apple Silicon (issue #20)
+        os: [ubuntu-latest, windows-latest, macos-13]
         flags: ["", "--no-default-features", "--release", "--release --no-default-features"]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
       - uses: actions-rs/toolchain@v1
         with:
             toolchain: ${{ matrix.rust_toolchain }}
@@ -34,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
       - uses: actions-rs/toolchain@v1
         with:
             toolchain: stable

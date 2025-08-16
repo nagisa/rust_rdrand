@@ -6,7 +6,7 @@ description = "An implementation of random number generator based on rdrand and 
 keywords = ["rand", "rdrand", "rdseed", "random"]
 license = "ISC"
 repository = "https://github.com/nagisa/rust_rdrand/"
-documentation = "https://docs.rs/rdrand/0.8.2/"
+documentation = "https://docs.rs/rdrand/0.8.3/"
 edition = "2018"
 
 [[bench]]
@@ -17,7 +17,7 @@ harness = false
 rand_core = { version = "0.6", default-features = false }
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = ">=0.3" # allow testing with old MSRV, bench with latest release for stable
 
 [features]
 default = ["std"]
