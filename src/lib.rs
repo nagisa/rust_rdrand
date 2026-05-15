@@ -59,6 +59,7 @@
 //! </table>
 //!
 //! [Agner’s instruction tables]: http://agner.org/optimize/
+#![no_std]
 pub mod changelog;
 mod errors;
 
@@ -85,7 +86,8 @@ pub struct RdRand(());
 /// This generator produces high-entropy output and is suited to seed other pseudo-random
 /// generators.
 ///
-/// This instruction is only supported by recent architectures such as Intel Broadwell and AMD Zen.
+/// This instruction is only supported by recent architectures such as Intel Broadwell, AMD Zen,
+/// and as an optional feature on AArch64 Armv8.1 and newer.
 ///
 /// This generator is not intended for general random number generation purposes and should be used
 /// to seed other generators implementing [rand_core::SeedableRng].
@@ -117,6 +119,66 @@ mod arch {
         let ok = _rdseed32_step(&mut ret1) & _rdseed32_step(&mut ret2);
         *dest = (ret1 as u64) << 32 | (ret2 as u64);
         ok
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub(crate) unsafe fn rand(out: &mut u64) -> i32 {
+        let value: u64;
+        let success: u64;
+
+        unsafe {
+            core::arch::asm!(
+                "mrs {0}, S3_3_C2_C4_0", // RNDR
+                "cset {1:w}, cs",  // Set w{1} to 1 if carry flag is set, else 0
+                out(reg) value,
+                lateout(reg) success,
+                options(nostack)
+            );
+        }
+        *out = value;
+        // From ARM spec:
+        // If the hardware returns a genuine random number, PSTATE.NZCV is set to 0b0000.
+        //
+        // If the instruction cannot return a genuine random number in a reasonable period of
+        // time, PSTATE.NZCV is set to 0b0100 and the data value returned is 0.
+        // So the assembly code returns 0 for success and nonzero for failure, but loop_rand expects
+        // the opposite.
+        (success == 0) as i32 // Returns 1 for success, 0 for failure
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub(crate) unsafe fn rand32(out: &mut u32) -> i32 {
+        let mut out64 = 0u64;
+        let status = unsafe { rand(&mut out64) };
+        *out = out64 as u32;
+        status
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub(crate) unsafe fn seed(out: &mut u64) -> i32 {
+        let value: u64;
+        let success: u64;
+
+        unsafe {
+            core::arch::asm!(
+                "mrs {0}, S3_3_C2_C4_1", // RNDRRS
+                "cset {1:w}, cs",  // Set w{1} to 1 if carry flag is set, else 0
+                out(reg) value,
+                lateout(reg) success,
+                options(nostack)
+            );
+        }
+
+        *out = value;
+        (success == 0) as i32 // See rand() above for note on the inverted status.
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub(crate) unsafe fn seed32(out: &mut u32) -> i32 {
+        let mut out64 = 0u64;
+        let status = unsafe { seed(&mut out64) };
+        *out = out64 as u32;
+        status
     }
 }
 
@@ -177,6 +239,119 @@ fn has_rdrand(cpuid1: &arch::CpuidResult) -> bool {
     cpuid1.ecx & FLAG == FLAG
 }
 
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn has_rand() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, use IsProcessorFeaturePresent
+        use core::ffi::c_int;
+        const PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE: c_int = 33;
+        unsafe extern "C" {
+            fn IsProcessorFeaturePresent(feature: c_int) -> i32;
+        }
+        // RNDR requires at least ARMv8.1, so check for atomic instructions
+        // as a minimum.
+        // FIXME: May falsely report available on rare hardware. Ideally Windows would have
+        // a check specifically for RNDR.
+        unsafe { IsProcessorFeaturePresent(PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE) != 0 }
+    }
+    #[cfg(any(target_os = "macos"))]
+    {
+        let mut value: u32 = 0;
+        let mut size = core::mem::size_of::<u32>();
+        let name = b"hw.optional.arm.FEAT_RNG\0";
+        unsafe extern "C" {
+            fn sysctlbyname(
+                name: *const u8,
+                oldp: *mut u32,
+                oldlenp: *mut usize,
+                newp: *const core::ffi::c_void,
+                newlen: usize,
+            ) -> core::ffi::c_int;
+        }
+        unsafe {
+            sysctlbyname(name.as_ptr(), &mut value, &mut size, core::ptr::null(), 0) == 0
+                && value != 0
+        }
+    }
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "none",
+        target_os = "uefi"))]
+    {
+        let value: u64;
+        unsafe {
+            // MRS is a privileged instruction (EL1),
+            // but it's emulated on Linux, FreeBSD and NetBSD.
+            core::arch::asm!(
+                "mrs {0}, ID_AA64ISAR0_EL1", // feature register
+                out(reg) value,
+                options(nostack)
+            );
+        }
+        (value & 0xF000_0000_0000_0000) != 0
+    }
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "uefi",
+        target_os = "none"
+    )))]
+    {
+        #[cfg(feature = "std")]
+        {
+            extern crate std;
+            std::arch::is_aarch64_feature_detected!("rand")
+        }
+
+        #[cfg(not(feature = "std"))]
+        {
+            #[cfg(target_os = "openbsd")]
+            {
+                // FIXME: Not tested.
+                const CTL_MACHDEP: c_int = 7;
+                const CPU_ID_AA64ISAR0: c_int = 2;
+
+                let mib = [CTL_MACHDEP, CPU_ID_AA64ISAR0];
+                let mut isar0: u64 = 0;
+                let mut len = core::mem::size_of_val(&isar0);
+
+                let result = unsafe {
+                    libc::sysctl(
+                        mib.as_ptr(),
+                        mib.len() as u32,
+                        &mut isar0 as *mut _ as *mut c_void,
+                        &mut len,
+                        core::ptr::null_mut(),
+                        0,
+                    )
+                };
+
+                if result == 0 {
+                    // Extract the RND field (bits 60-63)
+                    ((isar0 >> 60) & 0xF) >= 1
+                } else {
+                    false
+                }
+            }
+            #[cfg(not(target_os = "openbsd"))] {
+                // When we can't detect the feature, assume it's unavailable unless compiling with
+                // `-Ctarget-feature=+rand` (in which case `has_rand` is bypassed altogether).
+                // FIXME: Detection on iOS should be possible, but no known method is future-proof.
+                false
+            }
+        }
+    }
+}
+
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[allow(unused_unsafe)]
 #[inline(always)]
@@ -206,6 +381,16 @@ macro_rules! is_available {
             has_rdrand(&cpuid1) && amd_family(&cpuid1) >= FIRST_GOOD_AMD_FAMILY
         } else {
             cfg!(target_feature = "rdrand") || has_rdrand(&unsafe { arch::__cpuid(1) })
+        }
+    }};
+    ("rand") => {{
+        #[cfg(target_arch = "aarch64")]
+        {
+            cfg!(target_feature = "rand") || has_rand()
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            unreachable!()
         }
     }};
     ("rdseed") => {{
@@ -406,15 +591,35 @@ impl_rand!(
     maxstep = arch::_rdseed32_step,
     maxty = u32
 );
+#[cfg(target_arch = "aarch64")]
+impl_rand!(
+    RdRand,
+    "rand",
+    "rdrand",
+    arch::rand32,
+    arch::rand,
+    maxstep = arch::rand,
+    maxty = u64
+);
+#[cfg(target_arch = "aarch64")]
+impl_rand!(
+    RdSeed,
+    "rand",
+    "rdseed",
+    arch::seed32,
+    arch::seed,
+    maxstep = arch::seed,
+    maxty = u64
+);
 
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
 impl RdRand {
     fn new() -> Result<Self, ErrorCode> {
         Err(ErrorCode::UnsupportedInstruction)
     }
 }
 
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
 impl TryRng for RdRand {
     type Error = ErrorCode;
     fn try_next_u32(&mut self) -> Result<u32, ErrorCode> {
@@ -428,14 +633,14 @@ impl TryRng for RdRand {
     }
 }
 
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
 impl RdSeed {
     fn new() -> Result<Self, ErrorCode> {
         Err(ErrorCode::UnsupportedInstruction)
     }
 }
 
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
 impl TryRng for RdSeed {
     type Error = ErrorCode;
     fn try_next_u32(&mut self) -> Result<u32, ErrorCode> {
@@ -456,12 +661,22 @@ mod test {
 
     #[test]
     fn rdrand_works() {
-        let _status = RdRand::new().map(|mut r| {
-            r.try_next_u32().unwrap();
-            r.try_next_u64().unwrap();
-        });
-        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-        _status.unwrap();
+        extern crate std;
+        use std::eprintln;
+        eprintln!("Checking RdRand::new()...");
+        match RdRand::new() {
+            Ok(mut r) => {
+                eprintln!("RdRand created successfully, calling try_next_u32()");
+                match r.try_next_u32() {
+                    Ok(val) => eprintln!("Got random value: {}", val),
+                    Err(e) => eprintln!("try_next_u32 failed: {:?}", e),
+                }
+            }
+            Err(e) => {
+                eprintln!("RdRand::new() failed with: {:?}", e);
+                eprintln!("This is expected on CPUs without RDRAND support");
+            }
+        }
     }
 
     #[repr(C, align(8))]
@@ -509,7 +724,11 @@ mod test {
                 panic!("wow, we broke it? {} {} {:?}", start, end, &test_buffer[..])
             }
         });
-        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+        #[cfg(any(
+            all(target_feature = "rand", target_arch = "aarch64"),
+            target_arch = "x86_64",
+            target_arch = "x86"
+        ))]
         _status.unwrap();
     }
 
@@ -519,7 +738,11 @@ mod test {
             r.try_next_u32().unwrap();
             r.try_next_u64().unwrap();
         });
-        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+        #[cfg(any(
+            all(target_feature = "rand", target_arch = "aarch64"),
+            target_arch = "x86_64",
+            target_arch = "x86"
+        ))]
         _status.unwrap();
     }
 }

@@ -17,6 +17,12 @@ harness = false
 [dependencies]
 rand_core = { version = "0.10", default-features = false }
 
+[features]
+std = []
+
+[target.'cfg(target_os = "openbsd")'.dependencies]
+libc = "0.2.185"
+
 [dev-dependencies]
 criterion = "0.8"
 rand = "0.10.0"

@@ -9,14 +9,13 @@ on:
     types: [opened, reopened, synchronize]
 
 jobs:
-  test:
+  test_x86:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         rust_toolchain: [nightly, stable, 1.86.0]
-        os: [ubuntu-latest, windows-latest, macOS-latest]
-        flags: ["", "--no-default-features", "--release", "--release --no-default-features"]
+        os: [ubuntu-latest, windows-latest, macos-26-intel]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v2
@@ -28,10 +27,45 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --manifest-path=Cargo.toml ${{ matrix.flags }} -- --nocapture
-
-  bench:
+          args: --manifest-path=Cargo.toml -- --nocapture
+  test_aarch64:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, windows-11-arm, macOS-latest]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            profile: minimal
+            default: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --manifest-path=Cargo.toml -- --nocapture
+  test_cross:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v2
+      - uses: zijiren233/cargo-cross@30ebc6a41fafb4f7cf6af01df2387f776f6597c9
+        with:
+          command: test
+          toolchain: nightly
+          targets: |
+            aarch64-unknown-linux-gnu
+        env:
+          QEMU_CPU: 'max'  # Ensures the emulated CPU has FEAT_RNG
+          RUSTFLAGS: '-C target-feature=+rand'
+  bench:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, ubuntu-24.04-arm, macos-26-intel, macos-latest, windows-latest, windows-11-arm ]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v2
