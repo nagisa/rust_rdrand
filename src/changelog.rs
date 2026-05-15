@@ -4,9 +4,8 @@
 ///
 /// * Upgrade to `rand_core = ^0.10.0`.
 /// * Increase MSRV to 1.86.0.
+/// * Implemented support for aarch64 RNDR and RNDRRS instructions.
 pub mod r0_9_0 {}
-
-
 
 /// Fix the implementation of `try_fill_bytes` when the buffer is aligned but the size is not a
 /// multiple of a word size.
